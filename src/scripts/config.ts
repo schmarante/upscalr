@@ -8,9 +8,13 @@ export const ABOUT = {
 
 /** content types and their models (ids from scripts/models.json; the interface names them by content/quality only) */
 export const CONTENT = {
-    photo: { fast: 'photo-fast', quality: 'photo-quality' },
+    // fast photo model in three smoothing levels (how much noise and fine texture it removes; docs/models.md "blend")
+    photo: { fast: { strong: 'photo-fast', medium: 'photo-fast-medium', weak: 'photo-fast-weak' }, quality: 'photo-quality' },
     drawing: 'drawing',
 } as const;
+
+/** grain after upscaling (photos): slider 0…100 % → grain.ts amount 0…1 */
+export const GRAIN = { max: 100, step: 5 };
 
 /** background removal model (id from scripts/models.json) */
 export const CUTOUT = 'cutout';
@@ -28,6 +32,11 @@ export const TILING = {
     overlap: 24,
     minSize: 64,
     pad: 8,
+};
+
+/** editing a cut-out: work size (longer side) – previews stay quick; "apply" works at output size */
+export const EDIT = {
+    maxSide: 1536,
 };
 
 /** quality of the lossy output formats (0…1) */

@@ -1,6 +1,6 @@
 # Oberfläche und Bedienung
 
-Aufbau der Seite, Panel, Bild öffnen, Vorher/Nachher-Vergleich, Hinweise, „Über“, Sprache, Icons, Stil.
+Aufbau der Seite, Panel, Bild öffnen, Vorher/Nachher-Vergleich, Vorschau-Hintergründe, Auswahl bearbeiten (Klick-Auswahl, Pinsel), Hinweise, „Über“, Sprache, Icons, Stil.
 
 ## Aufbau (`src/pages/index.astro`, Logik `src/scripts/app.ts`)
 
@@ -13,17 +13,21 @@ Aufbau der Seite, Panel, Bild öffnen, Vorher/Nachher-Vergleich, Hinweise, „Ü
 
 ## Panel
 
-Reihenfolge: Logo + Name · Bild (Name, Größe, Format, Knopf „Bild öffnen“) · **Inhalt** Foto | Zeichnung · **Qualität** Schnell | Hoch (nur bei Foto) · **Faktor** 1× | 2× | 4× · **Hintergrund** Behalten | Entfernen · Größe vorher → nachher, Download-Größe der noch fehlenden Modelle bzw. „Modelle bereit (offline)“, ggf. Warnung „zu groß“ bzw. Hinweis „bei 1× nur mit Entfernen“ · Knopf **Hochskalieren** / **Abbrechen** · Fortschritt (Text, Balken amber wie RINDR, Restzeit) · nach dem Ergebnis **Herunterladen** (Link mit `download`-Attribut auf die Blob-URL) + Dateiname + Größe/Dateigröße/Dauer · Rechenwerk (Grafikkarte/Prozessor, 16/32 bit).
+Reihenfolge: Logo + Name · Bild (Name, Größe, Format, Knopf „Bild öffnen“) · **Inhalt** Foto | Zeichnung · **Qualität** Schnell | Hoch (nur bei Foto) · **Glättung** Stark | Mittel | Schwach (nur Foto + Schnell; Standard Mittel) · **Körnung** Regler 0–100 % (nur Foto) · **Faktor** 1× | 2× | 4× · **Hintergrund** Behalten | Entfernen · Größe vorher → nachher, Download-Größe der noch fehlenden Modelle bzw. „Modelle bereit (offline)“, ggf. Warnung „zu groß“ bzw. Hinweis „bei 1× nur mit Entfernen“ · Knopf **Hochskalieren** / **Abbrechen** · Fortschritt (Text, Balken amber wie RINDR, Restzeit) · nach dem Ergebnis **Herunterladen** (Link mit `download`-Attribut auf die Blob-URL) + Dateiname + Größe/Dateigröße/Dauer · Rechenwerk (Grafikkarte/Prozessor, 16/32 bit).
 
+- **Einstellungszeilen** (Wunsch des Nutzers, 05.11.2026): jede Einstellung in einer Zeile – links der Name (`text-white/50`, feste Breite), daneben die aktuelle Wahl als Text (`[data-current]`, aus dem `aria-label` des aktiven Knopfs, in `updatePanel()`), rechts die Optionen als **Icons** (Tooltip `title` + `aria-label` aus den Sprachdateien, damit auch ohne Maus/auf dem Handy klar ist, was gewählt ist). Icons: Foto `photo`, Zeichnung `drawing` (Feder), Schnell `fast` (Blitz), Hoch `best` (Edelstein), Glättung `smooth-strong|medium|weak` (glatte → raue Linien), Hintergrund `bg-keep` / `bg-remove` (Person mit durchgezogenem bzw. gestricheltem Rahmen); Faktor bleibt Text (1×/2×/4×). Körnung: Regler in der Zeile, Wert rechts. Optionen je Zeile: `OPTIONS` in `index.astro`. Gilt auch auf dem Handy (spart Höhe im unteren Panel).
 - **1×** = nicht hochskalieren, nur freistellen (Inhalt/Qualität abgeblendet, Knopf „Freistellen“); 1× mit „Behalten“ hätte nichts zu tun → Knopf gesperrt mit Hinweis.
-- Einstellungen (Inhalt, Qualität, Faktor, Hintergrund) bleiben je Browser erhalten (`localStorage` `upscalr.settings`, Fehler beim Speichern egal).
+- **Glättung** wählt eine der drei Stufen des schnellen Foto-Modells (`CONTENT.photo.fast` in config.ts, `docs/models.md` „blend“) – anderes Modell, also neu hochskalieren. **Körnung** (`docs/inference.md`): Ziehen zeigt den Wert („aus“ bei 0), Loslassen (`change`) schreibt das vorhandene Ergebnis mit der neuen Körnung neu, ohne neu zu rechnen (`regrain()` in app.ts; während „Auswahl bearbeiten“ gesperrt, „Übernehmen“ nimmt den aktuellen Wert). Die Körnung steckt nicht im Einstellungs-Schlüssel des Ergebnisses, sondern in `result.grain`.
+- Einstellungen (Inhalt, Qualität, Glättung, Körnung, Faktor, Hintergrund) bleiben je Browser erhalten (`localStorage` `upscalr.settings`, Fehler beim Speichern egal).
 - Das Ergebnis bleibt bei geänderten Einstellungen sichtbar; Knopf wird zu „Erneut hochskalieren“, Zusatz „Einstellungen geändert“. Ohne Änderung ist er gesperrt.
 - Kein automatischer Start nach dem Öffnen (das Qualitätsmodell ist beim ersten Mal 32 MB Download).
-- Segment-Schalter, Knöpfe: Klassen und `segmented()` aus `src/scripts/ui-controls.ts` (einheitlicher Stil).
+- Segment-Schalter, Knöpfe: Klassen und `segmented()` aus `src/scripts/ui-controls.ts` (einheitlicher Stil; Segment-Knöpfe sind kompakt `h-7 min-w-8`, Inhalt zentriert – Icon oder kurzer Text).
 
 ## Bild öffnen
 
 Datei-Dialog (`#file-input`, `accept="image/*"`, Knöpfe mit `data-pick`), **Drag & Drop** aufs Fenster (Overlay `#drop-overlay`; während einer Berechnung gesperrt), **Einfügen** aus der Zwischenablage (Strg+V, erstes Bild). Ein neues Bild verwirft das alte Ergebnis.
+
+Die Datei wird beim Öffnen **einmal komplett in den Speicher gelesen** (`openFile()` → neues `File` aus `arrayBuffer()`), alles Weitere (Vorschau, Dekodieren beim Start, Bearbeiten) arbeitet auf dieser Kopie. Grund (Nutzer-Rückmeldung 05.11.2026, Handy): der Datei-Dialog auf Android liefert einen Verweis, der später unlesbar werden kann – das Bild erschien, beim Start kam „Format nicht lesbar“. Das Dateifeld wird erst nach dem Lesen geleert. Hinweise: `notice.read` (Datei nicht lesbar, z.B. Foto nur in der Cloud), `notice.decode` (Format beim Öffnen nicht lesbar), `notice.decodeRun` (beim Start nicht dekodierbar, obwohl es beim Öffnen ging – meist Speicher); mit `?debug` hängt die Meldung des Browsers an, die Konsole bekommt sie immer (`console.warn`).
 
 ## Vergleich (`src/scripts/compare.ts`)
 
@@ -35,6 +39,32 @@ Datei-Dialog (`#file-input`, `accept="image/*"`, Knöpfe mit `data-pick`), **Dra
 - Transparentes Ergebnis (freigestellt oder Quelle mit Alpha): **Schachbrett** hinter dem Nachher-Bild (`.checker` in global.css, Feldgröße folgt dem Zoom über `--checker`) – sonst schiene das Vorher-Bild durch den entfernten Hintergrund.
 - Ohne Ergebnis: nur „Vorher“ in Zielgröße (Faktor ändern = neue Größe), keine Trennlinie; das leere Ergebnis-`<img>` ist versteckt (zeichnete sonst eine Haarlinie).
 - Touch: Ziehen/Verschieben per Pointer Events; Zwei-Finger-Zoom fehlt noch.
+
+## Vorschau-Hintergründe (05.11.2026, Wunsch des Nutzers)
+
+Bei transparenten Ergebnissen (und beim Bearbeiten) unten rechts sechs Knöpfe: Schachbrett, Schwarz, Weiß, Rot, Grün, Blau – nur die Vorschau, die Datei bleibt transparent. Wahl je Browser gespeichert (`upscalr.bg`). `CompareView.setBackground` (Farben `BACKGROUNDS` in compare.ts; Schachbrett = Klasse `.checker`, Feldgröße folgt dem Zoom). Auf schmalen Fenstern ist die Werkzeugleiste ausgeblendet (offen).
+
+Der Hintergrund liegt auf einer **eigenen Ebene** (`[data-after-bg]`, gleicher Ausschnitt wie das Ergebnis), nicht auf dem `<img>`: sonst blitzte beim Einblenden eines freigestellten Ergebnisses kurz die nackte Farbe auf, bevor das Bild dekodiert war (Nutzer-Rückmeldung 05.11.2026). Ablauf in `setAfter()`: Bild setzen → `decode()` + ein Frame → Ebene weich einblenden (Opacity 0,3 s). Bis dahin scheint im transparenten Teil das Original durch. Ist der Hintergrund schon sichtbar (neue Körnung, übernommene Bearbeitung), bleibt er stehen – kein erneutes Ein-/Ausblenden; ein neuer Lauf (`clearAfter`) blendet neu ein. Gemessen (Chrome, je Frame): 0 Frames mit Hintergrund ohne Bild.
+
+## Auswahl bearbeiten (05.11.2026, Wunsch des Nutzers: „nur Pinsel + Klickauswahl“)
+
+Nach dem Freistellen: Knopf „Auswahl bearbeiten“ (nur wenn das Ergebnis freigestellt ist und die Einstellungen noch passen). Das Panel zeigt dann die Werkzeuge (`[data-edit]`, Logik `src/scripts/editor.ts`, Regeln `src/scripts/selection.ts`):
+
+| Werkzeug | Wirkung |
+|---|---|
+| **Objekt +** | Klick fügt das Objekt unter dem Mauszeiger hinzu (Klick-Auswahl), Alt+Klick nimmt es heraus |
+| **Objekt −** | Klick nimmt das Objekt heraus, Alt+Klick fügt hinzu |
+| **Verschieben** | Ziehen verschiebt das Bild (mit jedem Werkzeug: Leertaste halten oder mittlere Maustaste) |
+| **Behalten** / **Wegnehmen** | Pinsel: übermalte Bereiche werden ausgewählt / entfernt |
+| **Kante** | Pinsel über feinen Kanten (Haare, Fell): dort stärkere Kantenverfeinerung |
+
+- Ausgangspunkt ist die automatische Auswahl; jede Aktion ändert sie, spätere gewinnen. Rückgängig/Wiederholen (Strg+Z, Strg+Umschalt+Z/Strg+Y), Zurücksetzen auf automatisch. Pinselgröße per Regler oder `[` / `]`; Pinsel-Umriss folgt dem Mauszeiger.
+- Anzeige: die Vorschau als freigestelltes Bild über dem gewählten Vorschau-Hintergrund; „Entferntes blass zeigen“ (Standard an) lässt Weggenommenes zu 25 % durchscheinen, damit man es wieder anklicken kann.
+- Bearbeitet wird in **Arbeitsgröße** (längere Seite höchstens `EDIT.maxSide` = 1536 px): sofortige Grobanzeige beim Malen, danach die verfeinerte Vorschau aus dem Worker (≈ 0,4 s). **Übernehmen** rechnet in voller Ausgabegröße auf dem schon hochskalierten Bild (2048² ≈ 2,3 s) und ersetzt das Ergebnis; **Abbrechen** verwirft.
+- **Nicht-destruktiv** (Wunsch des Nutzers, 05.11.2026): Übernehmen merkt sich die Aktionsliste (`EditHistory` aus `editor.history()`, in app.ts `editHistory`). Erneutes „Auswahl bearbeiten“ startet mit dieser Liste auf der automatischen Auswahl – alles Bisherige ist wieder da, Rückgängig geht Schritt für Schritt bis zur Automatik zurück, Zurücksetzen = automatisch. Abbrechen verwirft nur die Änderungen seit dem letzten Übernehmen. Möglich, weil der Worker jedes Übernehmen aus dem unveränderten hochskalierten Bild (`last.out`) und der vollständigen Liste rechnet, nie aus dem vorigen Ergebnis. Die Liste gilt nur für dasselbe Ergebnis (gleiche Arbeitsgröße): ein neuer Lauf oder ein neues Bild verwirft sie; eine neue Körnung nicht.
+- Klick-Auswahl lädt beim ersten Bearbeiten ihr Modell (≈ 74 MB, einmalig), analysiert das Bild und macht einen Probe-Klick (Shader übersetzt) – Status „Bereit – klicken oder malen“. Bis dahin funktionieren die Pinsel; scheitert die Klick-Auswahl, bleiben die Pinsel.
+- Regeln (`selection.ts`): Objekt = Maske des Klick-Modells (max bzw. min mit Inverser); Striche als kantengeglättete Scheiben entlang des Pfads. Innere von Strichen und angeklickten Objekten (um den Verfeinerungsradius geschrumpft) bleiben nach der Kantenverfeinerung exakt – ohne das zog die Verfeinerung an Bildkanten blasse Umrisse eines entfernten Objekts zurück. Ränder angeklickter Objekte (die Masken des Klick-Modells sind grob, 256²) gehen in die Kanten-Karte. Schrittweises Malen = Neuberechnen aus der Liste (Test).
+- Tests: `tests/selection.test.ts`.
 
 ## Hinweise (`src/scripts/notice.ts`, aus RINDR)
 

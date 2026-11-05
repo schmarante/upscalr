@@ -14,6 +14,7 @@ export const RUNTIME: Library[] = [
 export const MODELS: Library[] = [
     { id: 'realEsrgan', name: 'Real-ESRGAN', license: 'BSD-3-Clause', url: 'https://github.com/xinntao/Real-ESRGAN', notice: 'licenses/real-esrgan.txt' },
     { id: 'birefnet', name: 'BiRefNet', license: 'MIT', url: 'https://github.com/ZhengPeng7/BiRefNet', notice: 'licenses/birefnet.txt' },
+    { id: 'sam', name: 'SAM 2.1 (Segment Anything)', license: 'Apache-2.0', url: 'https://github.com/facebookresearch/sam2', notice: 'licenses/sam2.txt' },
 ];
 // build tools
 export const BUILD: Library[] = [

@@ -4,7 +4,7 @@
 export const SELECT = 'min-w-0 rounded bg-white/10 px-1.5 py-0.5 text-left text-white outline-none focus:bg-white/20 cursor-pointer';
 
 /** segmented control button: base, active, inactive */
-export const SEG = 'flex-1 rounded px-2 py-1 text-center transition-colors outline-none focus-visible:ring-1 focus-visible:ring-sky-400 disabled:opacity-40 disabled:cursor-not-allowed';
+export const SEG = 'flex h-7 min-w-8 items-center justify-center rounded px-1.5 transition-colors outline-none focus-visible:ring-1 focus-visible:ring-sky-400 disabled:opacity-40 disabled:cursor-not-allowed';
 export const SEG_ON = 'bg-sky-500/80 text-white';
 export const SEG_OFF = 'text-white/70 hover:bg-white/10';
 

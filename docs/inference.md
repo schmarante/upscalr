@@ -9,12 +9,13 @@ Worker, Backend-Wahl (WebGPU / CPU), Inferenz-Runtime, Freistellen, Kachelung mi
 | `src/scripts/upscaler.ts` | Seitenseite: startet den Worker, kennt das Backend (`info`, `onBackend`), schickt Aufträge (`run` → `{ promise, cancel }`), lädt das Manifest (`loadManifest`), `publicUrl()` für Pfade unter `public/` (beachtet `BASE_URL`). |
 | `src/scripts/upscale-worker.ts` | Worker: Backend, Sitzung, Kacheln, Alpha, Kodieren. |
 | `src/scripts/tiling.ts` | Reine Funktionen (ohne DOM): Kachelplan, Rampen, Spiegelrand, Netz-Eingabe, 2×-Reduktion, Überblenden. |
+| `src/scripts/grain.ts` | Körnung (rein, ohne DOM), Test `tests/grain.test.ts`. |
 | `src/scripts/types.ts` | Nachrichten Seite ↔ Worker, Manifest-Typen. |
 | `tests/tiling.test.ts` | `npm test` (Node, ohne Browser). |
 
 ## Nachrichten
 
-Seite → Worker: `init { ortBase, debug, forceCpu, forceFp32, verbose }`, `run { id, bitmap (übertragen), factor (1/2/4), upscale (Modell + scale, null bei 1×), cutout (Modell + size/mean/std, null = Hintergrund behalten), mime, tile, quality, keepUrls }`, `cancel { id }`.
+Seite → Worker: `init { ortBase, debug, forceCpu, forceFp32, verbose }`, `run { id, bitmap (übertragen), factor (1/2/4), upscale (Modell + scale, null bei 1×), cutout (Modell + size/mean/std, null = Hintergrund behalten), mime, tile, quality, grain (0…1), keepUrls }`, `cancel { id }`, `grain { id, amount }` (letztes Ergebnis mit anderer Körnung neu schreiben), `edit-apply { …, grain }`.
 Worker → Seite: `ready { backend, precision, adapter }` (auch erneut, wenn WebGPU ausfällt), `progress { phase: download | prepare | cutout | tiles | alpha | encode }`, `notice { code: 'tile-reduced', tileSize }`, `done { blob, width, height, mime, alpha, ms }`, `error { code, message }`.
 Fehlercodes → Texte `notice.error.<code>` (download, model, gpu-memory, too-large, encode, cancelled, unknown). Der Worker übersetzt nichts.
 
@@ -58,6 +59,16 @@ Ergebnis beim Testbild: Außenkonturen deutlich besser (kein Saum, Strähnen, ab
 
 Verworfen: Alpha aus lokaler Vorder-/Hintergrundfarbe projizieren (Trimap aus der Maske, Farben per gewichteter Unschärfe) – im Schatten zwischen den Locken ist die Wand dunkler als geschätzt, große Flächen wurden fälschlich deckend.
 
+## Auswahl bearbeiten im Worker (05.11.2026)
+
+- Nach jedem Freistellen behält der Worker `last`: Quellpixel, das Ergebnis **vor** dem Anwenden der Maske (hochskaliertes RGB, Alpha = Quell-Alpha oder 255) und die automatische Maske – Vorschau und Übernehmen müssen nie neu hochskalieren.
+- `edit-start`: Arbeitsgröße (längere Seite ≤ `EDIT.maxSide`), Bild + automatische Maske in dieser Größe zurück (`edit-ready`); danach im Hintergrund die Klick-Auswahl: Encoder + Decoder laden, Bild (auf 1024² gestaucht, ImageNet-Normierung) analysieren, ein Probe-Klick übersetzt die Decoder-Shader (sonst dauerte der erste echte Klick 15,8 s statt 46 ms), dann `edit-select-ready`.
+- `edit-click`: ein Punkt (Bruchteil des Bildes × 1024), leere Box-Eingabe `[1, 0, 4]`, von den drei Kandidaten der mit dem besten Qualitätswert; Logits 256² bilinear auf Arbeitsgröße, steile Sigmoid → Maske 0…255.
+- `edit-refine`: Arbeitsbild + Grobmaske → `refineCutout` mit Kanten-Karte und exakten Inneren → Vorschau (`edit-preview`).
+- `edit-apply`: Grobmaske auf Ausgabegröße, Karten ebenso (`scaleGray`), `refineCutout` auf dem hochskalierten Bild, schreiben → `done` wie ein normales Ergebnis.
+- `refineCutout` (matte.ts) kann jetzt: Kanten-Karte = zweiter, stärkerer geführter Filter (doppelter Radius, ε/4) nur im Ausschnitt der Kanten-Karte, eingeblendet nach ihrem Wert; `keep`/`remove` als Unter-/Obergrenze des Alphas.
+- Messwerte (Desktop-GPU, warm): Analyse 89 ms, Probe-Klick 63 ms, Klick → Maske 46–60 ms, Vorschau 0,35–0,43 s (1024²), Übernehmen bei 2048² 2,3 s.
+
 ## Kachelung (`tiling.ts`, Werte in `TILING`, config.ts)
 
 - Bild zuerst virtuell um `pad` = 8 px **gespiegelt** (`mirror`, ohne Kantenpixel zu doppeln; winzige Bilder klemmen) – wie im Training sieht das Netz am Bildrand Inhalt statt Null-Padding.
@@ -70,6 +81,16 @@ Verworfen: Alpha aus lokaler Vorder-/Hintergrundfarbe projizieren (Trimap aus de
   Direkt jede Kachel mit dem Produkt beider Rampen in die Ausgabe („over“) lässt in den Ecken der Überlappung eine Stufe: der Anteil des linken Nachbarn im oberen Band wird nie ausgeblendet (bis zu ¼ des Helligkeitsunterschieds zweier Kacheln). Getrennt je Richtung ist jede Mischung eindimensional und überall stetig.
   Speicher: Ausgabe RGBA + ein Band (bei 4× und 8000 px Breite ≈ 25 MB) – keine Float-Puffer in Ausgabegröße.
 - Fortschritt je Kachel; die Seite schätzt die Restzeit aus der mittleren Kachelzeit.
+
+## Körnung (`grain.ts`, 05.11.2026)
+
+Wunsch des Nutzers: Personen wirkten nach dem Hochskalieren zu glatt („wachsig“). Neben der Glättungsstufe des schnellen Modells (`docs/models.md`, `blend`) gibt es einen Regler **Körnung** 0–100 % (nur bei Foto; bei 1× ohne Wirkung), der nach dem Hochskalieren feines Rauschen in Ausgabegröße hinzufügt – eigene Umsetzung:
+- Rauschen je Pixel aus einem Hash der Position (32-bit-Finalizer) → gleiche Stärke = gleiches Bild, unabhängig von der Reihenfolge; näherungsweise normalverteilt (Summe von vier Gleichverteilten).
+- 3×3-Binomial-Weichzeichnung → Korn ≈ 1,5 px statt Einzelpixel-Grieseln (Nachbar-Korrelation ≈ 0,67, Test), Verstärkung 8/3 hält die Standardabweichung.
+- Gleicher Wert auf R, G, B (kein Farbrauschen); Gewicht nach Helligkeit 0,3 + 2,8·L·(1 − L): Mitteltöne voll, Schwarz/Weiß 30 % (weiße Hintergründe bleiben sauber). Alpha unverändert.
+- Stärke: 100 % = Standardabweichung 8 Stufen (`GRAIN_SIGMA`; zuerst 12 – 80 % war am Porträt deutlich zu grob).
+
+Der Worker behält das letzte Ergebnis **ohne Körnung** (`final`: RGBA in Ausgabegröße, fertiges Alpha, Format); die Körnung kommt auf eine Kopie direkt vor dem Kodieren (`encodeFinal`). Ein anderer Regler-Wert schreibt also nur neu (`grain`-Nachricht): 3200×1844 in ≈ 0,15 s statt neu hochzuskalieren. `final` wird beim Start eines neuen Laufs verworfen (Speicher) – zusammen mit `last`/`edit`; die Seite merkt sich das (`workerHasResult`): danach (z.B. abgebrochener neuer Lauf) gilt ein Ergebnis mit anderer Körnung als veraltet → „Erneut hochskalieren“.
 
 ## Speicher-Rückfall
 
@@ -91,6 +112,8 @@ Hat das Bild Transparenz (ein Alpha < 255), wird der Alpha-Kanal aus dem Origina
 | 800×600 freistellen (1×) | Freistellen fp16, WebGPU + CPU-Threads | – | Maske 1,1–1,3 s (warm), erster Lauf ~3 s |
 | 800×600 freistellen + 4× | Freistellen + schnell | 12 | ≈2 s warm |
 | 800×600 freistellen (1×) | Freistellen, **CPU** (wasm, Threads) | – | Maske 2,7 s |
+| 800×461 → 4× (Porträt) | schnell, Glättung Stark / Mittel / Schwach | – | 0,7 / 0,6 / 0,5 s (warm) |
+| Körnung ändern, 3200×1844 | – | – | ≈ 80 ms Körnung, ≈ 0,15 s mit JPEG-Schreiben |
 
 Erster Besuch mit leerem Shader-Cache des Browsers: das erste Bild dauerte 18,6 s statt 0,8 s (Kompilieren der Shader); danach aus dem Cache. Modell-Sitzung anlegen (Qualität, fp16): einige Sekunden.
 

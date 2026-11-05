@@ -9,11 +9,12 @@
 // browser rejects one of the runtime's shaders (seen in Firefox: "ShaderModule with 'Pad' label is invalid" in the
 // cut-out model), only that model is moved to the CPU and the job continues (notice "cpu-fallback").
 import * as ort from 'onnxruntime-web/webgpu';
-import type { Backend, ErrorCode, FromWorker, ModelRef, Precision, RunRequest, ToWorker } from './types';
+import type { Backend, CutoutInput, ErrorCode, FromWorker, ModelRef, Precision, RunRequest, ToWorker } from './types';
 import { blendBand, blendTileIntoBand, planTiles, ramp, reduceOutput, tileInput } from './tiling';
 import { encodeImage } from './image-io';
 import { loadModel, pruneModels } from './model-cache';
 import { refineCutout } from './matte';
+import { addGrain } from './grain';
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 const post = (msg: FromWorker) => scope.postMessage(msg);
@@ -31,10 +32,29 @@ let backend: Backend = 'wasm';
 let precision: Precision = 'fp32';
 let adapterName = '';
 /** one session per task, kept for the next picture as long as the model stays the same */
-type Role = 'upscale' | 'cutout';
+type Role = 'upscale' | 'cutout' | 'select-encoder' | 'select-decoder';
 type Entry = { url: string; session: ort.InferenceSession; bytes: Uint8Array<ArrayBuffer>; ep: Backend };
 const sessions: Partial<Record<Role, Entry>> = {};
 const cancelled = new Set<number>();
+
+/**
+ * The last cut-out, kept for editing (docs/ui.md "Auswahl bearbeiten"): the source pixels, the output before the mask
+ * was applied (upscaled RGB, alpha = source alpha or 255) and the automatic mask – so a preview or "apply" never has
+ * to upscale again.
+ */
+let last: {
+    src: Uint8ClampedArray; w: number; h: number;
+    out: Uint8ClampedArray; outW: number; outH: number;
+    mask: Uint8ClampedArray; size: number;
+    mime: string; quality: RunRequest['quality']; sourceAlpha: boolean;
+} | null = null;
+/** the running edit session: work size and picture, click selection (embeddings of the picture) */
+let edit: {
+    w: number; h: number; rgba: Uint8ClampedArray;
+    embeddings: Promise<Record<string, ort.Tensor>> | null;
+} | null = null;
+/** the last result before grain (output size, final alpha) – a new grain amount only writes the file again */
+let final: { rgba: Uint8ClampedArray<ArrayBuffer>; w: number; h: number; mime: string; quality: RunRequest['quality']; alpha: boolean } | null = null;
 let queue: Promise<void> = Promise.resolve();
 
 const cpuThreads = () => (scope.crossOriginIsolated ? Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 16)) : 1);
@@ -110,7 +130,7 @@ async function toCpu(role: Role, req: RunRequest, cause: unknown) {
     console.warn(`${role} model fails on WebGPU, running it on the CPU:`, cause);
     await entry.session.release();
     Object.assign(entry, await createSession(entry.bytes, true));
-    post({ type: 'notice', id: req.id, code: 'cpu-fallback', role });
+    post({ type: 'notice', id: req.id, code: 'cpu-fallback', role: role.startsWith('select') ? 'select' : (role as 'upscale' | 'cutout') });
 }
 
 async function useModel(role: Role, ref: ModelRef, req: RunRequest): Promise<Entry> {
@@ -275,18 +295,82 @@ function scaleIntoAlpha(source: CanvasImageSource, sw: number, sh: number, chann
     canvas.width = canvas.height = 0;
 }
 
-/** the mask (gray, size × size) as an opaque canvas – drawable and scalable like a picture */
-function maskCanvas(mask: Uint8ClampedArray, size: number) {
-    const rgba = new Uint8ClampedArray(size * size * 4);
+/** a gray map (w × h) as an opaque canvas – drawable and scalable like a picture */
+function maskCanvas(mask: Uint8ClampedArray, w: number, h = w) {
+    const rgba = new Uint8ClampedArray(w * h * 4);
     for (let i = 0; i < mask.length; i++) { rgba[i * 4] = rgba[i * 4 + 1] = rgba[i * 4 + 2] = mask[i]; rgba[i * 4 + 3] = 255; }
-    const canvas = new OffscreenCanvas(size, size);
-    canvas.getContext('2d')!.putImageData(new ImageData(rgba, size, size), 0, 0);
+    const canvas = new OffscreenCanvas(w, h);
+    canvas.getContext('2d')!.putImageData(new ImageData(rgba, w, h), 0, 0);
     return canvas;
+}
+
+/** RGBA pixels as a canvas */
+function pixelCanvas(rgba: Uint8ClampedArray, w: number, h: number) {
+    const canvas = new OffscreenCanvas(w, h);
+    canvas.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(rgba), w, h), 0, 0);
+    return canvas;
+}
+
+/** a picture scaled smoothly to w × h, as RGBA bytes */
+function scaled(source: CanvasImageSource, w: number, h: number) {
+    const canvas = new OffscreenCanvas(w, h);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(source, 0, 0, w, h);
+    const data = ctx.getImageData(0, 0, w, h).data;
+    canvas.width = canvas.height = 0;
+    return data;
+}
+
+/** a gray map scaled smoothly to the output size (strips like scaleIntoAlpha) */
+function scaleGray(map: Uint8ClampedArray, sw: number, sh: number, outW: number, outH: number) {
+    const tmp = new Uint8ClampedArray(outW * outH * 4).fill(255);
+    for (let i = 3; i < tmp.length; i += 4) tmp[i] = 0;
+    scaleIntoAlpha(maskCanvas(map, sw, sh), sw, sh, 0, tmp, outW, outH, false);
+    const out = new Uint8ClampedArray(outW * outH);
+    for (let i = 0; i < out.length; i++) out[i] = tmp[i * 4 + 3];
+    return out;
+}
+
+/** network input (NCHW, normalised) from a picture squeezed to size × size */
+function normalised(source: CanvasImageSource, { size, mean, std }: CutoutInput) {
+    const px = scaled(source, size, size);
+    const plane = size * size;
+    const input = new Float32Array(3 * plane);
+    for (let i = 0; i < plane; i++) for (let c = 0; c < 3; c++) input[c * plane + i] = (px[i * 4 + c] / 255 - mean[c]) / std[c];
+    return new ort.Tensor('float32', input, [1, 3, size, size]);
+}
+
+/** grain (on a copy – `final` stays clean) and write the file */
+async function encodeFinal(f: NonNullable<typeof final>, grain: number) {
+    let px = f.rgba;
+    if (grain > 0) {
+        const t0 = performance.now();
+        try {
+            px = addGrain(f.rgba, new Uint8ClampedArray(f.rgba.length), f.w, f.h, grain);
+        } catch {
+            throw new RunError('too-large', `no memory for the grain copy of ${f.w}×${f.h}`);
+        }
+        log(`grain ${Math.round(grain * 100)} % in ${Math.round(performance.now() - t0)} ms`);
+    }
+    let blob: Blob;
+    try {
+        blob = await encodeImage(px, f.w, f.h, f.mime, f.alpha, f.quality);
+    } catch (e) {
+        throw new RunError('encode', String(e));
+    }
+    if (!blob.size) throw new RunError('encode', 'empty file');
+    return blob;
 }
 
 async function run(req: RunRequest) {
     const started = performance.now();
     const { bitmap, factor } = req;
+    // the previous result is replaced – free its memory before the new one is allocated
+    last = null;
+    edit = null;
+    final = null;
     const w = bitmap.width, h = bitmap.height;
     const outW = w * factor, outH = h * factor;
     try {
@@ -318,6 +402,9 @@ async function run(req: RunRequest) {
         }
         if (mask) {
             const size = req.cutout!.size;
+            // kept for editing (before the mask is applied)
+            last = { src: new Uint8ClampedArray(rgba), w, h, out: out.slice(), outW, outH, mask, size, mime: req.mime, quality: req.quality, sourceAlpha };
+            edit = null;
             scaleIntoAlpha(maskCanvas(mask, size), size, size, 0, out, outW, outH, true);
             // edges: guided filter on the picture + foreground colours (matte.ts)
             if (cancelled.has(req.id)) throw new RunError('cancelled');
@@ -329,13 +416,8 @@ async function run(req: RunRequest) {
         const alpha = sourceAlpha || !!mask;
 
         post({ type: 'progress', id: req.id, progress: { phase: 'encode' } });
-        let blob: Blob;
-        try {
-            blob = await encodeImage(out, outW, outH, req.mime, alpha, req.quality);
-        } catch (e) {
-            throw new RunError('encode', String(e));
-        }
-        if (!blob.size) throw new RunError('encode', 'empty file');
+        final = { rgba: out, w: outW, h: outH, mime: req.mime, quality: req.quality, alpha };
+        const blob = await encodeFinal(final, req.grain);
         post({ type: 'done', id: req.id, blob, width: outW, height: outH, mime: blob.type || req.mime, alpha, ms: performance.now() - started });
     } catch (e) {
         const err = e instanceof RunError ? e : new RunError('unknown', String(e));
@@ -344,6 +426,158 @@ async function run(req: RunRequest) {
     } finally {
         bitmap.close();
         cancelled.delete(req.id);
+    }
+}
+
+// --- editing a cut-out ---
+
+class EditError extends RunError {}
+
+/** start: work size, picture and automatic mask at that size; the click selection loads in the background */
+async function editStart(msg: Extract<ToWorker, { type: 'edit-start' }>) {
+    try {
+        if (!last) throw new EditError('unknown', 'nothing to edit');
+        const { src, w, h, mask, size } = last;
+        const s = Math.min(1, msg.maxSide / Math.max(w, h));
+        const ww = Math.max(1, Math.round(w * s)), wh = Math.max(1, Math.round(h * s));
+        const source = pixelCanvas(src, w, h);
+        const rgba = s === 1 ? new Uint8ClampedArray(src) : scaled(source, ww, wh);
+        const base = new Uint8ClampedArray(ww * wh);
+        const m = scaled(maskCanvas(mask, size), ww, wh);
+        for (let i = 0; i < base.length; i++) base[i] = m[i * 4];
+        edit = { w: ww, h: wh, rgba, embeddings: null };
+        post({ type: 'edit-ready', id: msg.id, w: ww, h: wh, rgba: rgba.slice(), base });
+        // click selection: models + the picture's embeddings (the first click waits for them)
+        const session = edit;
+        session.embeddings = (async () => {
+            const enc = await useModel('select-encoder', msg.encoder, { id: msg.id, keepUrls: msg.keepUrls } as RunRequest);
+            await useModel('select-decoder', msg.decoder, { id: msg.id, keepUrls: msg.keepUrls } as RunRequest);
+            const input = normalised(source, msg.encoder);
+            const t0 = performance.now();
+            const run = () => enc.session.run({ [enc.session.inputNames[0]]: input });
+            let out: ort.InferenceSession.OnnxValueMapType;
+            try {
+                out = await run();
+            } catch (e) {
+                if (enc.ep !== 'webgpu' || !isShaderError(e)) throw e;
+                await toCpu('select-encoder', { id: msg.id } as RunRequest, e);
+                out = await run();
+            }
+            input.dispose();
+            log(`selection: picture analysed in ${Math.round(performance.now() - t0)} ms (${enc.ep})`);
+            // one throw-away click: the decoder's shaders are compiled now, not on the user's first click
+            const t1 = performance.now();
+            await decode(out as Record<string, ort.Tensor>, 0.5, 0.5, msg.id).catch(e => log('warm-up click failed', e));
+            log(`selection: decoder warmed up in ${Math.round(performance.now() - t1)} ms`);
+            return out as Record<string, ort.Tensor>;
+        })();
+        session.embeddings.then(() => post({ type: 'edit-select-ready', id: msg.id }), e => {
+            console.warn('click selection unavailable:', e);
+            post({ type: 'error', id: msg.id, code: e instanceof RunError ? e.code : 'model', message: String(e) });
+        });
+    } catch (e) {
+        post({ type: 'error', id: msg.id, code: e instanceof RunError ? e.code : 'unknown', message: String(e) });
+    }
+}
+
+/** one decoder run for a point given as fraction of the picture (fx, fy) */
+async function decode(emb: Record<string, ort.Tensor>, fx: number, fy: number, id: number) {
+    const dec = sessions['select-decoder']!;
+    const size = 1024;
+    const feeds: Record<string, ort.Tensor> = {
+        input_points: new ort.Tensor('float32', Float32Array.from([fx * size, fy * size]), [1, 1, 1, 2]),
+        input_labels: new ort.Tensor('int64', BigInt64Array.from([1n]), [1, 1, 1]),
+        input_boxes: new ort.Tensor('float32', new Float32Array(0), [1, 0, 4]),
+    };
+    for (const name of dec.session.inputNames) if (emb[name]) feeds[name] = emb[name];
+    try {
+        return await dec.session.run(feeds);
+    } catch (e) {
+        if (dec.ep !== 'webgpu' || !isShaderError(e)) throw e;
+        await toCpu('select-decoder', { id } as RunRequest, e);
+        return dec.session.run(feeds);
+    }
+}
+
+/** click (work coordinates) → mask of the object under it (0…255, work size), the best of the model's candidates */
+async function editClick(msg: Extract<ToWorker, { type: 'edit-click' }>) {
+    try {
+        if (!edit?.embeddings) throw new EditError('unknown', 'no edit session');
+        const { w, h } = edit;
+        const emb = await edit.embeddings;
+        const t0 = performance.now();
+        const out = await decode(emb, (msg.x + 0.5) / w, (msg.y + 0.5) / h, msg.id);
+        const iou = out.iou_scores.data as Float32Array;
+        let best = 0;
+        for (let i = 1; i < iou.length; i++) if (iou[i] > iou[best]) best = i;
+        const [, , , mh, mw] = out.pred_masks.dims;
+        const logits = (out.pred_masks.data as Float32Array).subarray(best * mh * mw, (best + 1) * mh * mw);
+        // bilinear in logit space, then a steep sigmoid: smooth outline without a wide grey seam
+        const mask = new Uint8ClampedArray(w * h);
+        for (let y = 0; y < h; y++) {
+            const fy = Math.min(mh - 1, Math.max(0, (y + 0.5) * mh / h - 0.5)), y0 = Math.floor(fy), y1 = Math.min(mh - 1, y0 + 1), ty = fy - y0;
+            for (let x = 0; x < w; x++) {
+                const fx = Math.min(mw - 1, Math.max(0, (x + 0.5) * mw / w - 0.5)), x0 = Math.floor(fx), x1 = Math.min(mw - 1, x0 + 1), tx = fx - x0;
+                const v = (logits[y0 * mw + x0] * (1 - tx) + logits[y0 * mw + x1] * tx) * (1 - ty) + (logits[y1 * mw + x0] * (1 - tx) + logits[y1 * mw + x1] * tx) * ty;
+                mask[y * w + x] = 255 / (1 + Math.exp(-2 * v));
+            }
+        }
+        for (const t of Object.values(out)) t.dispose();
+        log(`selection: click → mask in ${Math.round(performance.now() - t0)} ms`);
+        post({ type: 'edit-mask', id: msg.id, op: msg.op, mask });
+    } catch (e) {
+        post({ type: 'error', id: msg.id, code: e instanceof RunError ? e.code : 'unknown', message: String(e) });
+    }
+}
+
+/** preview at work size: picture + refined selection (colours estimated) */
+function editRefine(msg: Extract<ToWorker, { type: 'edit-refine' }>) {
+    try {
+        if (!edit || !last) throw new EditError('unknown', 'no edit session');
+        const { w, h } = edit;
+        const rgba = edit.rgba.slice();
+        for (let i = 0; i < w * h; i++) rgba[i * 4 + 3] = last.sourceAlpha ? (rgba[i * 4 + 3] * msg.coarse[i]) / 255 : msg.coarse[i];
+        const t0 = performance.now();
+        refineCutout(rgba, w, h, Math.max(w, h) / last.size, { edge: msg.edge, keep: msg.keep, remove: msg.remove });
+        log(`edit preview refined in ${Math.round(performance.now() - t0)} ms`);
+        post({ type: 'edit-preview', id: msg.id, rgba });
+    } catch (e) {
+        post({ type: 'error', id: msg.id, code: e instanceof RunError ? e.code : 'unknown', message: String(e) });
+    }
+}
+
+/** apply at output size: mask scaled up, refined on the upscaled picture, written like a normal result */
+async function editApply(msg: Extract<ToWorker, { type: 'edit-apply' }>) {
+    const started = performance.now();
+    try {
+        if (!edit || !last) throw new EditError('unknown', 'no edit session');
+        const { w, h } = edit;
+        const { outW, outH } = last;
+        post({ type: 'progress', id: msg.id, progress: { phase: 'refine' } });
+        const out = last.out.slice();
+        scaleIntoAlpha(maskCanvas(msg.coarse, w, h), w, h, 0, out, outW, outH, true);
+        const big = (map: Uint8ClampedArray) => (map.some(v => v) ? scaleGray(map, w, h, outW, outH) : undefined);
+        refineCutout(out, outW, outH, Math.max(outW, outH) / last.size, { edge: big(msg.edge), keep: big(msg.keep), remove: big(msg.remove) });
+        post({ type: 'progress', id: msg.id, progress: { phase: 'encode' } });
+        final = { rgba: out, w: outW, h: outH, mime: last.mime, quality: last.quality, alpha: true };
+        const blob = await encodeFinal(final, msg.grain);
+        post({ type: 'done', id: msg.id, blob, width: outW, height: outH, mime: blob.type || last.mime, alpha: true, ms: performance.now() - started });
+    } catch (e) {
+        post({ type: 'error', id: msg.id, code: e instanceof RunError ? e.code : 'encode', message: String(e) });
+    }
+}
+
+/** the last result with another grain amount */
+async function regrain(msg: Extract<ToWorker, { type: 'grain' }>) {
+    const started = performance.now();
+    try {
+        if (!final) throw new RunError('unknown', 'no result to add grain to');
+        post({ type: 'progress', id: msg.id, progress: { phase: 'encode' } });
+        const blob = await encodeFinal(final, msg.amount);
+        post({ type: 'done', id: msg.id, blob, width: final.w, height: final.h, mime: blob.type || final.mime, alpha: final.alpha, ms: performance.now() - started });
+    } catch (e) {
+        const err = e instanceof RunError ? e : new RunError('unknown', String(e));
+        post({ type: 'error', id: msg.id, code: err.code, message: err.message });
     }
 }
 
@@ -358,5 +592,15 @@ scope.onmessage = (ev: MessageEvent<ToWorker>) => {
         queue = queue.then(() => run(msg));
     } else if (msg.type === 'cancel') {
         cancelled.add(msg.id);
+    } else if (msg.type === 'edit-start') {
+        queue = queue.then(() => editStart(msg));
+    } else if (msg.type === 'edit-click') {
+        queue = queue.then(() => editClick(msg));
+    } else if (msg.type === 'edit-refine') {
+        queue = queue.then(() => editRefine(msg));
+    } else if (msg.type === 'edit-apply') {
+        queue = queue.then(() => editApply(msg));
+    } else if (msg.type === 'grain') {
+        queue = queue.then(() => regrain(msg));
     }
 };

@@ -1,5 +1,6 @@
 Model weights used by this app (converted from PyTorch checkpoints to ONNX by scripts/convert-models.mjs):
   realesr-general-x4v3, RealESRGAN_x4plus, RealESRGAN_x4plus_anime_6B
+  realesr-general-wdn-x4v3 – its weights are blended with realesr-general-x4v3 (50 % and 100 %) for the smoothing levels
 Source: https://github.com/xinntao/Real-ESRGAN
 
 BSD 3-Clause License

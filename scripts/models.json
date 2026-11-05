@@ -1,5 +1,5 @@
 {
-    "$comment": "Single source of the upscaling models: scripts/convert-models.mjs downloads and converts them, the app reads the generated public/models/manifest.json. Origin and license of every entry are listed in src/scripts/libraries.ts and public/licenses/ (BSD-3-Clause requires the notice). The interface names models only by content and quality (panel.* in the language files), never by the upstream names. arch 'onnx': ready-made ONNX files (one per precision), only checked and copied.",
+    "$comment": "Single source of the upscaling models: scripts/convert-models.mjs downloads and converts them, the app reads the generated public/models/manifest.json. Origin and license of every entry are listed in src/scripts/libraries.ts and public/licenses/ (BSD-3-Clause requires the notice). The interface names models only by content and quality (panel.* in the language files), never by the upstream names. arch 'onnx': ready-made ONNX files (one per precision; weights in a separate file under \"data\" are embedded), checked and rewritten for the browser. blend: the weights are mixed with a second checkpoint of the same network (share \"amount\" of the second) – the authors' way to set how strongly the fast photo model removes noise (docs/models.md).",
     "models": [
         {
             "id": "photo-fast",
@@ -10,6 +10,38 @@
             "weights": "params",
             "license": "BSD-3-Clause",
             "task": "upscale"
+        },
+        {
+            "id": "photo-fast-medium",
+            "arch": "compact",
+            "scale": 4,
+            "source": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth",
+            "sha256": "8dc7edb9ac80ccdc30c3a5dca6616509367f05fbc184ad95b731f05bece96292",
+            "weights": "params",
+            "license": "BSD-3-Clause",
+            "task": "upscale",
+            "blend": {
+                "source": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-wdn-x4v3.pth",
+                "sha256": "1641f8c4464b9f097c9fdda5589273713f67cf59f3d909e0bd688f0cee269dca",
+                "weights": "params",
+                "amount": 0.5
+            }
+        },
+        {
+            "id": "photo-fast-weak",
+            "arch": "compact",
+            "scale": 4,
+            "source": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth",
+            "sha256": "8dc7edb9ac80ccdc30c3a5dca6616509367f05fbc184ad95b731f05bece96292",
+            "weights": "params",
+            "license": "BSD-3-Clause",
+            "task": "upscale",
+            "blend": {
+                "source": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-wdn-x4v3.pth",
+                "sha256": "1641f8c4464b9f097c9fdda5589273713f67cf59f3d909e0bd688f0cee269dca",
+                "weights": "params",
+                "amount": 1.0
+            }
         },
         {
             "id": "photo-quality",
@@ -59,6 +91,67 @@
                 }
             },
             "license": "MIT"
+        },
+        {
+            "id": "select-encoder",
+            "task": "select",
+            "arch": "onnx",
+            "input": {
+                "size": 1024,
+                "mean": [
+                    0.485,
+                    0.456,
+                    0.406
+                ],
+                "std": [
+                    0.229,
+                    0.224,
+                    0.225
+                ]
+            },
+            "variants": {
+                "fp32": {
+                    "source": "https://huggingface.co/onnx-community/sam2.1-hiera-tiny-ONNX/resolve/814a066640debee5a91e70aa401fb8e17e030503/onnx/vision_encoder.onnx",
+                    "sha256": "4f30aacd3aaefbca81a0b7fe4c1fc96345570ea0a6f80ced599493d1b3be2e8c",
+                    "data": {
+                        "source": "https://huggingface.co/onnx-community/sam2.1-hiera-tiny-ONNX/resolve/814a066640debee5a91e70aa401fb8e17e030503/onnx/vision_encoder.onnx_data",
+                        "sha256": "e83df9866a5afe68ea7f0f721f18f65137fc3acbf0da1c74e946d363e09c69cc"
+                    }
+                },
+                "fp16": {
+                    "source": "https://huggingface.co/onnx-community/sam2.1-hiera-tiny-ONNX/resolve/814a066640debee5a91e70aa401fb8e17e030503/onnx/vision_encoder_fp16.onnx",
+                    "sha256": "7773e79d589dada8e1e630cc7eb18b17b2c5b4faeb1eaab5ebf9df618ecbd50a",
+                    "data": {
+                        "source": "https://huggingface.co/onnx-community/sam2.1-hiera-tiny-ONNX/resolve/814a066640debee5a91e70aa401fb8e17e030503/onnx/vision_encoder_fp16.onnx_data",
+                        "sha256": "a4dd3759e9b6a476d991fb3493787992e78777e51462695e1bede71ae258103e"
+                    }
+                }
+            },
+            "license": "Apache-2.0"
+        },
+        {
+            "id": "select-decoder",
+            "task": "select",
+            "arch": "onnx",
+            "variants": {
+                "fp32": {
+                    "source": "https://huggingface.co/onnx-community/sam2.1-hiera-tiny-ONNX/resolve/814a066640debee5a91e70aa401fb8e17e030503/onnx/prompt_encoder_mask_decoder.onnx",
+                    "sha256": "874414704c5d686db7d206a35f6e15d26563d50c8c4468fccc6739bd7e491dcf",
+                    "data": {
+                        "source": "https://huggingface.co/onnx-community/sam2.1-hiera-tiny-ONNX/resolve/814a066640debee5a91e70aa401fb8e17e030503/onnx/prompt_encoder_mask_decoder.onnx_data",
+                        "sha256": "e9874d900dd4134ed60eab1e97910327c2419e0b2954485d8fd6e7f1a1470f47"
+                    }
+                },
+                "fp16": {
+                    "source": "https://huggingface.co/onnx-community/sam2.1-hiera-tiny-ONNX/resolve/814a066640debee5a91e70aa401fb8e17e030503/onnx/prompt_encoder_mask_decoder_fp16.onnx",
+                    "sha256": "00ac7200451f246e8307aa1a1648113f47dc45625738406403a0e6b86c69fc55",
+                    "data": {
+                        "source": "https://huggingface.co/onnx-community/sam2.1-hiera-tiny-ONNX/resolve/814a066640debee5a91e70aa401fb8e17e030503/onnx/prompt_encoder_mask_decoder_fp16.onnx_data",
+                        "sha256": "027b457a53f5bd76bb401c59555448451d04b4eab6d2f6a6758406b40133ee2c"
+                    }
+                }
+            },
+            "license": "Apache-2.0"
         }
     ]
 }

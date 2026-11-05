@@ -12,7 +12,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { readCheckpoint } from './lib/pth-reader.mjs';
 import { BUILDERS, FLOAT, FLOAT16 } from './lib/nets.mjs';
-import { fuseDeformConv, limitNodeWidth, opsInFloat32, MAX_WIDTH } from './lib/onnx-rewrite.mjs';
+import { fuseDeformConv, inlineExternalData, limitNodeWidth, opsInFloat32, MAX_WIDTH } from './lib/onnx-rewrite.mjs';
 
 const CONVERTER_VERSION = '1';
 const root = path.dirname(path.dirname(new URL(import.meta.url).pathname));
@@ -63,6 +63,17 @@ async function fetchSource(model, source, expected, cacheName = path.basename(ne
     return buf;
 }
 
+/** a ← (1 − amount)·a + amount·b for every tensor (same network: same names and shapes) */
+function blendWeights(a, b, amount) {
+    if (!(amount >= 0 && amount <= 1)) throw new Error(`blend amount ${amount} outside 0…1`);
+    for (const [name, t] of a) {
+        const o = b.get(name);
+        if (!o || o.shape.join() !== t.shape.join()) throw new Error(`blend: tensor ${name} missing or of another shape in the second checkpoint`);
+        for (let i = 0; i < t.data.length; i++) t.data[i] = (1 - amount) * t.data[i] + amount * o.data[i];
+    }
+    for (const name of b.keys()) if (!a.has(name)) throw new Error(`blend: tensor ${name} only in the second checkpoint`);
+}
+
 function writeVariant(entry, model, variant, bytes) {
     const hash = sha256(bytes);
     const file = `${model.id}-${hash.slice(0, 10)}.${variant}.onnx`;
@@ -83,9 +94,14 @@ for (const model of models) {
     console.log(`${model.id} (${model.task}, ${model.arch}${model.scale ? `, ×${model.scale}` : ''})`);
     if (model.arch === 'onnx') {
         // ready-made ONNX files: checked and copied (hash in the name like the converted ones)
-        const entry = { task: model.task, arch: model.arch, input: model.input, variants: {} };
+        const entry = { task: model.task, arch: model.arch, ...(model.input ? { input: model.input } : {}), variants: {} };
         for (const [variant, v] of Object.entries(model.variants)) {
-            const src = await fetchSource(model, v.source, v.sha256, `${model.id}.${variant}.onnx`);
+            let src = await fetchSource(model, v.source, v.sha256, `${model.id}.${variant}.onnx`);
+            if (v.data) {
+                const ext = inlineExternalData(src, await fetchSource(model, v.data.source, v.data.sha256, `${model.id}.${variant}.onnx_data`));
+                console.log(`  ${variant}: ${ext.embedded} external weights embedded`);
+                src = Buffer.from(ext.bytes);
+            }
             // spelled-out deformable convolutions → DeformConv, wide Concat/Split → trees (scripts/lib/onnx-rewrite.mjs)
             const fusedModel = fuseDeformConv(src);
             if (fusedModel.fused) console.log(`  ${variant}: ${fusedModel.fused} deformable convolutions fused into DeformConv`);
@@ -107,13 +123,22 @@ for (const model of models) {
     const build = BUILDERS[model.arch];
     if (!build) throw new Error(`${model.id}: unknown arch "${model.arch}"`);
     const sd = readCheckpoint(await fetchSource(model, model.source, model.sha256), model.weights);
+    if (model.blend) {
+        // network interpolation: weights mixed with a second checkpoint of the same network (models.json "blend")
+        const other = readCheckpoint(await fetchSource(model, model.blend.source, model.blend.sha256), model.blend.weights ?? model.weights);
+        blendWeights(sd, other, model.blend.amount);
+        console.log(`  weights blended: ${Math.round(model.blend.amount * 100)} % of ${path.basename(new URL(model.blend.source).pathname)}`);
+    }
     const params = [...sd.values()].reduce((n, t) => n + t.data.length, 0);
     const entry = { task: model.task, arch: model.arch, scale: model.scale, params, variants: {} };
     for (const [variant, type] of [['fp32', FLOAT], ['fp16', FLOAT16]]) {
         const bytes = build(sd, model.scale, type).encode({
             producer: 'upscalr',
             version: CONVERTER_VERSION,
-            metadata: { id: model.id, scale: model.scale, source: model.source, license: model.license, precision: variant },
+            metadata: {
+                id: model.id, scale: model.scale, source: model.source, license: model.license, precision: variant,
+                ...(model.blend ? { blend: model.blend.source, blendAmount: String(model.blend.amount) } : {}),
+            },
         });
         writeVariant(entry, model, variant, bytes);
     }

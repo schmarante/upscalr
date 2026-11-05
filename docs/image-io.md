@@ -5,7 +5,7 @@
 ## Lesen
 
 - **Erkennung** (`detectMime`): MIME-Typ des Browsers (Aliasse wie `image/jpg`, `image/x-ms-bmp` normalisiert) → sonst Dateiendung → sonst die ersten Bytes (PNG, JPEG, WebP, AVIF, GIF, BMP). Kein `image/*` → Hinweis `notice.notImage`.
-- **Dekodieren** macht der Browser: `createImageBitmap(file)` – EXIF-Ausrichtung wird angewendet (`imageOrientation: from-image`), Farbraum nach sRGB umgerechnet. Was der Browser nicht lesen kann (z.B. HEIC in Chrome, TIFF) → Hinweis `notice.decode`.
+- **Dekodieren** macht der Browser: `createImageBitmap(file)` – EXIF-Ausrichtung wird angewendet (`imageOrientation: from-image`), Farbraum nach sRGB umgerechnet. Was der Browser nicht lesen kann (z.B. HEIC in Chrome, TIFF) → Hinweis `notice.decode`. Dekodiert wird aus der Kopie im Speicher, die beim Öffnen angelegt wird (`docs/ui.md` „Bild öffnen“).
 - Für den Auftrag wird das Bitmap neu erzeugt und an den Worker **übertragen** (kein Kopieren); der Worker zeichnet es in eine OffscreenCanvas und liest RGBA.
 - Bekannte Grenzen: animierte GIF/WebP/APNG → nur das erste Bild; 16-bit-PNG → 8 bit; eingebettete Farbprofile → in sRGB umgerechnet (großer Farbraum geht verloren); Metadaten (EXIF, Kamera) fallen beim Schreiben weg.
 

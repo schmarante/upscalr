@@ -371,3 +371,36 @@ export function opsInFloat32(modelBytes, ops = ['Pad']) {
     const newModel = model.map(f => (f === graphField ? { num: 7, wire: 2, value: serializeMessage(newGraph) } : f));
     return { bytes: serializeMessage(newModel), wrapped };
 }
+
+// --- external data ---
+
+/**
+ * Embed weights stored in a separate file ("external data": TensorProto.external_data with location/offset/length)
+ * into the model, so the model is one file like all others. Returns { bytes, embedded }.
+ */
+export function inlineExternalData(modelBytes, dataBytes) {
+    const model = parseMessage(modelBytes);
+    const graphField = model.find(f => f.num === 7);
+    const graph = parseMessage(graphField.value);
+    let embedded = 0;
+    const newGraph = graph.map(f => {
+        if (f.num !== 5) return f;
+        const t = parseMessage(f.value);
+        const external = Number(t.find(x => x.num === 14)?.value ?? 0n) === 1;
+        if (!external) return f;
+        const info = {};
+        for (const e of t.filter(x => x.num === 13)) {
+            const kv = parseMessage(e.value);
+            info[strings(kv, 1)[0]] = strings(kv, 2)[0];
+        }
+        const offset = Number(info.offset ?? 0);
+        const length = info.length !== undefined ? Number(info.length) : dataBytes.length - offset;
+        if (offset + length > dataBytes.length) throw new Error(`external data out of range for ${strings(t, 8)[0]}`);
+        const kept = t.filter(x => x.num !== 13 && x.num !== 14 && x.num !== 9);
+        kept.push({ num: 9, wire: 2, value: dataBytes.subarray(offset, offset + length) });
+        embedded++;
+        return { num: 5, wire: 2, value: serializeMessage(kept) };
+    });
+    const newModel = model.map(f => (f === graphField ? { num: 7, wire: 2, value: serializeMessage(newGraph) } : f));
+    return { bytes: serializeMessage(newModel), embedded };
+}

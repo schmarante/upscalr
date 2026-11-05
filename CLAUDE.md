@@ -14,10 +14,11 @@ Keine Lizenzverletzungen, keine Nennung Dritter ohne Freigabe, basiert komplett 
 ## Modelle (ONNX)
 | Inhalt | Modell | Lizenz |
 |---|---|---|
-| Fotos (schnell) | realesr-general-x4v3 | BSD-3 |
+| Fotos (schnell) | realesr-general-x4v3, Glättung Mittel/Schwach gemischt mit realesr-general-wdn-x4v3 | BSD-3 |
 | Fotos (Qualität) | RealESRGAN_x4plus | BSD-3 |
 | Zeichnung / Anime / Lineart | RealESRGAN_x4plus_anime_6B | BSD-3 |
 | Freistellen (Hintergrund entfernen) | BiRefNet_lite (fertiger ONNX-Export, umgeschrieben: DeformConv, schmale Knoten) | MIT (Trainingsdaten teils nur nicht-kommerziell, `docs/licenses.md`) |
+| Klick-Auswahl (Auswahl bearbeiten) | SAM 2.1 hiera-tiny (fertiger ONNX-Export, Gewichte eingebettet) | Apache 2.0 |
 | Gesichter (später) | GFPGAN | Apache 2.0 |
 
 ## MVP
@@ -30,12 +31,14 @@ Keine Lizenzverletzungen, keine Nennung Dritter ohne Freigabe, basiert komplett 
 - [X] Download als hochskaliertes Bild im jeweiligen Original-Dateiformat mit dem Suffix *-upscale.dateiendung (PNG/JPEG/WebP/BMP; AVIF/GIF → PNG mit Hinweis)
 
 ## Zusätzlich umgesetzt
+- [X] Auswahl bearbeiten (05.11.2026, Wunsch des Nutzers): Klick-Auswahl (Objekt +/−) und Pinsel (Behalten, Wegnehmen, Kante), Rückgängig/Wiederholen, Vorschau in Arbeitsgröße, Übernehmen in voller Größe (`docs/ui.md`)
+- [X] Vorschau-Hintergründe für transparente Ergebnisse: Schachbrett, Schwarz, Weiß, Rot, Grün, Blau
+- [X] Gegen „wachsige“ Personen (05.11.2026, Wunsch des Nutzers): Glättung Stark | Mittel | Schwach für das schnelle Foto-Modell (Gewichte gemischt, Standard Mittel) und Regler Körnung, der ohne neue Berechnung wirkt (`docs/models.md`, `docs/inference.md`)
 - [X] Kantenverfeinerung beim Freistellen: geführter Filter + Vordergrundfarbe (`matte.ts`, Testbild des Nutzers: Saum weg, Strähnen zurück)
 - [X] Freistellen: Hintergrund: Behalten | Entfernen, kombinierbar mit 2×/4×, Faktor 1× = nur freistellen (Wunsch des Nutzers, 05.11.2026); JPEG → PNG, Suffix `-cutout` bei 1×
 
 ## Später
 - Freistellen: Kantenverfeinerung als WebGPU-Shader (heute 7,5 s bei 4096² im Worker); „Dunst“ zwischen Locken → echtes Matting-Modell prüfen (Lizenz/Trainingsdaten)
-- Klick-Auswahl fürs Freistellen (SAM 2.1, Apache-2.0) – falls die Automatik das falsche Objekt nimmt
 - Gesichtsrekonstruktion (GFPGAN) – Lizenzen der Hilfsmodelle prüfen (`docs/licenses.md`)
 - Vektorisieren reiner Strichzeichnungen – nur eigene Umsetzung oder Bibliothek mit freizügiger Lizenz; GPL-Tracer weder verwenden noch nennen (Entscheidung des Nutzers, 05.11.2026)
 - Stapelverarbeitung

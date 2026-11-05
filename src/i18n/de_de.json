@@ -27,6 +27,14 @@
         "quality": "Qualität",
         "fast": "Schnell",
         "best": "Hoch",
+        "smoothing": "Glättung",
+        "smoothingHint": "Wie stark das schnelle Modell Rauschen und feine Struktur (Haut, Stoff) glättet",
+        "smoothStrong": "Stark",
+        "smoothMedium": "Mittel",
+        "smoothWeak": "Schwach",
+        "grain": "Körnung",
+        "grainHint": "Feines Rauschen gegen glatte, wachsige Flächen – lässt sich nach dem Hochskalieren ohne neue Berechnung ändern",
+        "grainOff": "aus",
         "factor": "Faktor",
         "size": "{from} → {to} px",
         "modelSize": "Download: {size} (einmalig)",
@@ -69,7 +77,16 @@
         "after": "Nachher",
         "fit": "Einpassen (0)",
         "actual": "Originalgröße (1)",
-        "divider": "Trennlinie Vorher/Nachher (Pfeiltasten)"
+        "divider": "Trennlinie Vorher/Nachher (Pfeiltasten)",
+        "bg": {
+            "label": "Hintergrund der Vorschau",
+            "checker": "Schachbrett",
+            "black": "Schwarz",
+            "white": "Weiß",
+            "red": "Rot",
+            "green": "Grün",
+            "blue": "Blau"
+        }
     },
     "notice": {
         "noWebgpu": {
@@ -79,6 +96,14 @@
         "noModels": {
             "title": "KI-Modelle fehlen",
             "message": "Die Modelle wurden noch nicht erzeugt (npm run models)."
+        },
+        "read": {
+            "title": "Datei lässt sich nicht lesen",
+            "message": "Der Browser konnte {name} nicht laden. Bitte noch einmal auswählen – liegt das Foto nur in der Cloud, zuerst auf dem Gerät speichern."
+        },
+        "decodeRun": {
+            "title": "Bild lässt sich nicht verarbeiten",
+            "message": "Der Browser konnte {name} gerade nicht dekodieren – meist fehlt Arbeitsspeicher. Andere Tabs schließen und noch einmal starten."
         },
         "decode": {
             "title": "Bild lässt sich nicht öffnen",
@@ -113,7 +138,8 @@
         "cpuFallback": {
             "title": "Läuft teilweise auf dem Prozessor",
             "cutout": "Dieser Browser kann das Freistell-Modell nicht auf der Grafikkarte ausführen – es läuft deshalb auf dem Prozessor (etwas langsamer).",
-            "upscale": "Dieser Browser kann das Modell nicht auf der Grafikkarte ausführen – es läuft deshalb auf dem Prozessor (deutlich langsamer)."
+            "upscale": "Dieser Browser kann das Modell nicht auf der Grafikkarte ausführen – es läuft deshalb auf dem Prozessor (deutlich langsamer).",
+            "select": "Dieser Browser kann die Klick-Auswahl nicht auf der Grafikkarte ausführen – sie läuft deshalb auf dem Prozessor (langsamer)."
         }
     },
     "languages": {
@@ -142,7 +168,45 @@
             "vite": "Build-Werkzeug",
             "tailwind": "Gestaltung",
             "typescript": "Programmiersprache",
-            "birefnet": "Freistellen: Hintergrund erkennen und entfernen (fertiger ONNX-Export)"
+            "birefnet": "Freistellen: Hintergrund erkennen und entfernen (fertiger ONNX-Export)",
+            "sam": "Klick-Auswahl: Objekt unter dem Mauszeiger erkennen (fertiger ONNX-Export)"
         }
+    },
+    "edit": {
+        "start": "Auswahl bearbeiten",
+        "title": "Auswahl bearbeiten",
+        "tool": {
+            "add": "Objekt +",
+            "sub": "Objekt −",
+            "pan": "Verschieben",
+            "keep": "Behalten",
+            "remove": "Wegnehmen",
+            "edge": "Kante"
+        },
+        "hint": {
+            "add": "Klick auf ein Objekt fügt es der Auswahl hinzu. Alt+Klick nimmt es heraus.",
+            "sub": "Klick auf ein Objekt nimmt es aus der Auswahl. Alt+Klick fügt es hinzu.",
+            "pan": "Ziehen verschiebt das Bild. Mit gedrückter Leertaste geht das mit jedem Werkzeug.",
+            "keep": "Über Bereiche malen, die erhalten bleiben sollen.",
+            "remove": "Über Bereiche malen, die weg sollen.",
+            "edge": "Über feine Kanten wie Haare oder Fell malen – dort wird genauer verfeinert."
+        },
+        "size": "Größe",
+        "ghost": "Entferntes blass zeigen",
+        "undo": "Rückgängig (Strg+Z)",
+        "redo": "Wiederholen (Strg+Umschalt+Z)",
+        "reset": "Zurück zur automatischen Auswahl",
+        "apply": "Übernehmen",
+        "cancel": "Abbrechen",
+        "status": {
+            "preparing": "Bearbeitung wird vorbereitet …",
+            "loading": "Klick-Auswahl wird geladen … {loaded} / {total}",
+            "analysing": "Bild wird für die Klick-Auswahl analysiert …",
+            "ready": "Bereit – klicken oder malen",
+            "busy": "Vorschau wird berechnet …",
+            "failed": "Klick-Auswahl nicht verfügbar – die Pinsel funktionieren weiter."
+        },
+        "selectLoading": "Die Klick-Auswahl lädt noch – einen Moment.",
+        "clickFailed": "Das Objekt konnte nicht ausgewählt werden."
     }
 }

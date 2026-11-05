@@ -10,9 +10,10 @@ PolyForm Noncommercial 1.0.0 (`LICENSE.md`, wie RINDR – vorläufig, die Frage 
 
 | Was | Lizenz | Pflicht | Erfüllt durch |
 |---|---|---|---|
-| Modell-Gewichte (realesr-general-x4v3, RealESRGAN_x4plus, RealESRGAN_x4plus_anime_6B) – nach ONNX umgewandelt | BSD-3-Clause, © 2021 Xintao Wang | Copyright + Lizenztext in der Doku bei Weitergabe in Binärform; **Namen der Autoren nicht zur Werbung** | `public/licenses/real-esrgan.txt`, „Über“, README |
+| Modell-Gewichte (realesr-general-x4v3 – für die Glättungsstufen gemischt mit realesr-general-wdn-x4v3 aus demselben Release –, RealESRGAN_x4plus, RealESRGAN_x4plus_anime_6B) – nach ONNX umgewandelt | BSD-3-Clause, © 2021 Xintao Wang | Copyright + Lizenztext in der Doku bei Weitergabe in Binärform; **Namen der Autoren nicht zur Werbung** | `public/licenses/real-esrgan.txt`, „Über“, README |
 | ONNX Runtime Web 1.31.1 (JS + wasm) | MIT, © Microsoft; enthält Drittcode (ThirdPartyNotices) | Lizenz- und Copyright-Hinweis | `public/licenses/onnxruntime.txt` (LICENSE + ThirdPartyNotices des Tags v1.31.1) |
 | Freistell-Modell BiRefNet_lite (allgemeine Variante), ONNX-Export der onnx-community, von uns umgeschrieben (`docs/models.md`) | MIT, © 2024 ZhengPeng (Code, Gewichte und Export jeweils MIT) | Lizenz- und Copyright-Hinweis | `public/licenses/birefnet.txt`, „Über“, README |
+| Klick-Auswahl SAM 2.1 hiera-tiny (Meta), ONNX-Export der onnx-community, von uns verändert (Gewichte eingebettet, Pad in float32) | Apache-2.0 (Code und Checkpoints laut SAM-2-Repo); der Export nennt selbst keine Lizenz – er ist eine reine Umwandlung der Apache-Gewichte | Lizenztext, Hinweis auf Änderungen | `public/licenses/sam2.txt`, „Über“, README |
 | coi-serviceworker 0.1.7 (verändert) | MIT, © 2021 Guido Zuidhof | Hinweis | Kopfzeile der Datei, `public/licenses/coi-serviceworker.txt` |
 
 Nur zum Bauen (nicht ausgeliefert): Astro, Vite, Tailwind CSS (MIT), TypeScript (Apache-2.0). Der Konverter (`scripts/`) ist eigener Code – keine fremde Implementierung übernommen; die Netzstruktur ist aus den veröffentlichten Gewichten/Layer-Namen nachgebaut.

@@ -192,9 +192,62 @@ export function estimateForeground(rgba: Uint8ClampedArray, w: number, h: number
     }
 }
 
-/** refinement for a mask that was scaled up by `upscale` (output size / mask resolution) */
-export function refineCutout(rgba: Uint8ClampedArray, w: number, h: number, upscale: number) {
+export interface RefineOptions {
+    /** 0…255: areas refined more strongly (edge brush) – larger window, less smoothing */
+    edge?: Uint8ClampedArray;
+    /** 0…255: alpha at least this (interior of keep strokes) */
+    keep?: Uint8ClampedArray;
+    /** 0…255: alpha at most 255 − this (interior of remove strokes) */
+    remove?: Uint8ClampedArray;
+    /** foreground colour estimation (off for a quick preview of the mask only) */
+    colours?: boolean;
+}
+
+/** bounding box [x0, y0, x1, y1) of the non-zero values, or null */
+function bbox(map: Uint8ClampedArray, w: number, h: number): [number, number, number, number] | null {
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) {
+        const o = y * w;
+        for (let x = 0; x < w; x++) if (map[o + x]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; y1 = y; }
+    }
+    return x1 < 0 ? null : [x0, y0, x1 + 1, y1 + 1];
+}
+
+/**
+ * Refinement for a mask that was scaled up by `upscale` (output size / mask resolution): guided filter (stronger where
+ * `edge` says so), painted interiors applied exactly, then the foreground colours.
+ */
+export function refineCutout(rgba: Uint8ClampedArray, w: number, h: number, upscale: number, opts: RefineOptions = {}) {
     const r = Math.max(4, Math.round(4 * upscale));
+    // strong variant only inside the edge-brush area (with margin), computed from the unrefined mask
+    let strong: { x0: number; y0: number; cw: number; ch: number; alpha: Uint8ClampedArray } | null = null;
+    const box = opts.edge ? bbox(opts.edge, w, h) : null;
+    if (box) {
+        const m = 8 * r;
+        const x0 = Math.max(0, box[0] - m), y0 = Math.max(0, box[1] - m), x1 = Math.min(w, box[2] + m), y1 = Math.min(h, box[3] + m);
+        const cw = x1 - x0, ch = y1 - y0;
+        const crop = new Uint8ClampedArray(cw * ch * 4);
+        for (let y = 0; y < ch; y++) crop.set(rgba.subarray(((y0 + y) * w + x0) * 4, ((y0 + y) * w + x1) * 4), y * cw * 4);
+        guidedAlpha(crop, cw, ch, 2 * r, 2.5e-5);
+        const alpha = new Uint8ClampedArray(cw * ch);
+        for (let i = 0; i < alpha.length; i++) alpha[i] = crop[i * 4 + 3];
+        strong = { x0, y0, cw, ch, alpha };
+    }
     guidedAlpha(rgba, w, h, r, 1e-4);
-    estimateForeground(rgba, w, h, Math.max(16, Math.round(22 * upscale)), Math.max(3, Math.round(1.5 * upscale)));
+    if (strong && opts.edge) {
+        const { x0, y0, cw, ch, alpha } = strong;
+        for (let y = 0; y < ch; y++) {
+            for (let x = 0; x < cw; x++) {
+                const i = (y0 + y) * w + x0 + x, e = opts.edge[i];
+                if (e) rgba[i * 4 + 3] = rgba[i * 4 + 3] + (alpha[y * cw + x] - rgba[i * 4 + 3]) * (e / 255);
+            }
+        }
+    }
+    if (opts.keep || opts.remove) {
+        for (let i = 0, d = 3; i < w * h; i++, d += 4) {
+            if (opts.keep && opts.keep[i] > rgba[d]) rgba[d] = opts.keep[i];
+            if (opts.remove && 255 - opts.remove[i] < rgba[d]) rgba[d] = 255 - opts.remove[i];
+        }
+    }
+    if (opts.colours !== false) estimateForeground(rgba, w, h, Math.max(16, Math.round(22 * upscale)), Math.max(3, Math.round(1.5 * upscale)));
 }

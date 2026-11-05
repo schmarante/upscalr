@@ -6,10 +6,11 @@ KI-Modelle, eigener Konverter (Checkpoint → ONNX), fertige ONNX-Modelle samt U
 
 | Id (App) | Inhalt | Netz | Parameter | fp32 | fp16 |
 |---|---|---|---|---|---|
-| `photo-fast` | Foto, schnell | compact (32 Faltungen + PReLU, Depth-to-Space) | 1,21 M | 4,6 MB | 2,3 MB |
+| `photo-fast` | Foto, schnell, Glättung „Stark“ | compact (32 Faltungen + PReLU, Depth-to-Space) | 1,21 M | 4,6 MB | 2,3 MB |
+| `photo-fast-medium` / `photo-fast-weak` | Foto, schnell, Glättung „Mittel“ (Standard) / „Schwach“ | dasselbe Netz, Gewichte gemischt (`blend`, s.u.) | 1,21 M | je 4,6 MB | je 2,3 MB |
 | `photo-quality` | Foto, hohe Qualität | rrdb (23 Blöcke) | 16,70 M | 63,8 MB | 32,0 MB |
 | `drawing` | Zeichnung / Anime / Lineart | rrdb (6 Blöcke) | 4,47 M | 17,1 MB | 8,6 MB |
-
+| `select-encoder` / `select-decoder` | Klick-Auswahl (Auswahl bearbeiten) | fertiges ONNX in zwei Teilen (Bild-Encoder; Punkt → 3 Masken-Kandidaten 256² + Qualitätswerte) | – | 128,2 + 20,2 MB | 64,2 + 10,2 MB |
 | `cutout` | Freistellen (Hintergrund entfernen) | fertiges ONNX (Swin-T-Encoder + Decoder mit deformierbaren Faltungen), umgeschrieben | – | 172,8 MB | 88,6 MB |
 
 Hochskalierer alle ×4. Herkunft und Lizenzen (BSD-3-Clause bzw. MIT) siehe `docs/licenses.md`. In der Oberfläche heißen die Modelle nur nach Inhalt/Qualität – nie nach dem Upstream-Namen.
@@ -19,6 +20,8 @@ Hochskalierer alle ×4. Herkunft und Lizenzen (BSD-3-Clause bzw. MIT) siehe `doc
 Je Modell: `id` (Dateiname), `task` (`upscale` | `cutout`), `arch` (`compact` | `rrdb` | `onnx`), `scale`, `source` (Download-URL des Checkpoints), `sha256` (Pflicht – ohne Prüfsumme warnt der Konverter und nennt den Wert), `weights` (Eintrag im Checkpoint, der den State-Dict enthält: `params` oder `params_ema`), `license`.
 
 Welches Modell zu welcher Auswahl gehört: `CONTENT` und `CUTOUT` in `src/scripts/config.ts`.
+
+`blend` (nur Checkpoint-Modelle): `{ source, sha256, weights, amount }` – ein zweiter Checkpoint **desselben Netzes**; der Konverter mischt die Gewichte Tensor für Tensor: `(1 − amount)·A + amount·B` (`blendWeights()`; gleiche Namen und Formen Pflicht, sonst Abbruch). So regeln die Autoren beim schnellen Foto-Modell die Entrausch-Stärke: der zweite Checkpoint (`realesr-general-wdn-x4v3`, gleiches Release v0.2.5.0, BSD-3) entrauscht nur schwach. Deren Regler „denoise strength“ d entspricht `amount = 1 − d`; ihr Standard ist d = 0,5. Stufen (Nutzer-Wunsch 05.11.2026, Personen wirkten zu glatt): **Stark** = nur Hauptmodell (d = 1, bis dahin der einzige Stand), **Mittel** = `amount` 0,5 (Standard), **Schwach** = `amount` 1 (nur der zweite Checkpoint). Je Stufe ein eigenes Modell im Manifest (Umschalten = anderes Modell, kein Mischen im Browser); Metadaten im ONNX: `blend`, `blendAmount`. Für das Qualitätsmodell gibt es keinen solchen Partner – dort hilft nur die Körnung (`docs/inference.md`).
 
 `arch: "onnx"` (fertige ONNX-Dateien): statt `source`/`sha256` ein Eintrag `variants.{fp32,fp16}.{source,sha256}` (URL mit festem Commit) und `input` (`size`, `mean`, `std` – Eingangsgröße und Normierung, gehen ins Manifest).
 
@@ -54,6 +57,10 @@ Werden geladen, geprüft und durch `scripts/lib/onnx-rewrite.mjs` browsertauglic
 2. **`limitNodeWidth`:** Ein Shader darf nur begrenzt viele Speicherpuffer binden (WebGPU garantiert 8, die Test-GPU bietet 16); die Runtime macht aus Concat/Split einen Shader mit einem Puffer je Ein-/Ausgang. Das Modell hat Concat mit bis zu 1024 Eingängen und Split mit 32 Ausgängen (Bild in Felder zerlegt) → Fehler „Too many storage buffers in shader“. Ersetzt durch Bäume mit höchstens 7 Ein-/Ausgängen (+1 = 8): 4 Concat + 59 Split. Bitgenau gleich.
 3. **`opsInFloat32` (nur fp16-Variante):** Firefox lehnte im Freistell-Modell den Pad-Shader der Runtime ab („ShaderModule with 'Pad' label is invalid“); dieser Shader hat als einziger einen 16-bit-Sonderweg (`bitcast<vec2<f16>>` des Füllwerts), die übrigen 16-bit-Shader laufen dort. Die 24 Pad-Knoten (Fenster-Padding im Encoder) rechnen deshalb in float32 (Cast davor/danach) – Ergebnis unverändert (fp16-Logits ±0,02 wie zuvor). Ob das Firefox auf der GPU hält, ist noch im echten Firefox zu bestätigen; sonst greift der CPU-Rückfall (`docs/inference.md`).
 4. **Aufräumen:** Constant-Knoten, die nach dem Umschreiben niemand mehr liest (die alten Größen der ersetzten Split-Knoten, 59 Stück), werden entfernt – sonst warf die Runtime sie selbst weg, mit je einer Warnung in der Konsole (Hinweis des Nutzers, 05.11.2026).
+
+0. **`inlineExternalData`:** Exporte mit ausgelagerten Gewichten (`.onnx` + `.onnx_data`, in `models.json` als `variants.<v>.data`) werden zu einer Datei zusammengeführt (TensorProto `external_data` → `raw_data`) – Cache und Manifest bleiben wie bei allen Modellen. Klick-Auswahl: Encoder 92, Decoder 57–108 Gewichte eingebettet; im fp16-Encoder laufen 5 Pad-Knoten in float32.
+
+Prüfung der Klick-Auswahl (onnxruntime-node): Klick aufs Gesicht → Gesicht + Hals, auf die Knopfleiste → Knopfleiste, negativer Punkt zieht ab; fp16 = fp32.
 
 Prüfung ohne Browser: `onnxruntime-node` 1.31.1 (gleicher Stand wie im Browser; Python-Wheels für 3.10 enden bei 1.23, die noch keinen DeformConv-Kernel hat) in `.cache/verify/` (nicht in git), Referenz-Logits vom Originalmodell per Python.
 

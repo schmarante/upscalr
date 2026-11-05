@@ -27,6 +27,14 @@
         "quality": "Quality",
         "fast": "Fast",
         "best": "High",
+        "smoothing": "Smoothing",
+        "smoothingHint": "How strongly the fast model smooths noise and fine texture (skin, fabric)",
+        "smoothStrong": "Strong",
+        "smoothMedium": "Medium",
+        "smoothWeak": "Low",
+        "grain": "Grain",
+        "grainHint": "Fine noise against smooth, waxy surfaces – can be changed after upscaling without computing again",
+        "grainOff": "off",
         "factor": "Factor",
         "size": "{from} → {to} px",
         "modelSize": "Download: {size} (once)",
@@ -69,7 +77,16 @@
         "after": "After",
         "fit": "Fit (0)",
         "actual": "Actual size (1)",
-        "divider": "Before/after divider (arrow keys)"
+        "divider": "Before/after divider (arrow keys)",
+        "bg": {
+            "label": "Preview background",
+            "checker": "Checkerboard",
+            "black": "Black",
+            "white": "White",
+            "red": "Red",
+            "green": "Green",
+            "blue": "Blue"
+        }
     },
     "notice": {
         "noWebgpu": {
@@ -79,6 +96,14 @@
         "noModels": {
             "title": "AI models missing",
             "message": "The models have not been generated yet (npm run models)."
+        },
+        "read": {
+            "title": "Cannot read the file",
+            "message": "The browser could not load {name}. Please pick it again – if the photo is only in the cloud, save it to the device first."
+        },
+        "decodeRun": {
+            "title": "Cannot process the image",
+            "message": "The browser could not decode {name} right now – usually it is out of memory. Close other tabs and start again."
         },
         "decode": {
             "title": "Cannot open the image",
@@ -113,7 +138,8 @@
         "cpuFallback": {
             "title": "Partly running on the processor",
             "cutout": "This browser cannot run the background removal model on the graphics card – it runs on the processor instead (a bit slower).",
-            "upscale": "This browser cannot run the model on the graphics card – it runs on the processor instead (much slower)."
+            "upscale": "This browser cannot run the model on the graphics card – it runs on the processor instead (much slower).",
+            "select": "This browser cannot run the click selection on the graphics card – it runs on the processor instead (slower)."
         }
     },
     "languages": {
@@ -142,7 +168,45 @@
             "vite": "Build tool",
             "tailwind": "Styling",
             "typescript": "Programming language",
-            "birefnet": "Background removal: detects and removes the background (ready-made ONNX export)"
+            "birefnet": "Background removal: detects and removes the background (ready-made ONNX export)",
+            "sam": "Click selection: detects the object under the pointer (ready-made ONNX export)"
         }
+    },
+    "edit": {
+        "start": "Edit selection",
+        "title": "Edit selection",
+        "tool": {
+            "add": "Object +",
+            "sub": "Object −",
+            "pan": "Pan",
+            "keep": "Keep",
+            "remove": "Erase",
+            "edge": "Edge"
+        },
+        "hint": {
+            "add": "Click an object to add it to the selection. Alt+click takes it out.",
+            "sub": "Click an object to take it out of the selection. Alt+click adds it.",
+            "pan": "Drag to move the picture. Holding the space bar does this with any tool.",
+            "keep": "Paint over areas that should stay.",
+            "remove": "Paint over areas that should go.",
+            "edge": "Paint over fine edges like hair or fur – they are refined more precisely there."
+        },
+        "size": "Size",
+        "ghost": "Show removed areas faintly",
+        "undo": "Undo (Ctrl+Z)",
+        "redo": "Redo (Ctrl+Shift+Z)",
+        "reset": "Back to the automatic selection",
+        "apply": "Apply",
+        "cancel": "Cancel",
+        "status": {
+            "preparing": "Preparing …",
+            "loading": "Loading click selection … {loaded} / {total}",
+            "analysing": "Analysing the picture for click selection …",
+            "ready": "Ready – click or paint",
+            "busy": "Updating preview …",
+            "failed": "Click selection unavailable – the brushes still work."
+        },
+        "selectLoading": "Click selection is still loading – one moment.",
+        "clickFailed": "The object could not be selected."
     }
 }

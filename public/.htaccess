@@ -1,0 +1,45 @@
+# Force HTTPS (also behind a proxy/load balancer that terminates TLS)
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https
+    RewriteCond %{HTTPS} off
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301,NE]
+</IfModule>
+
+AddType application/wasm .wasm
+AddType application/octet-stream .onnx
+AddType text/javascript .mjs
+
+# Compression: text and the runtime's wasm (~28 MB → about a quarter). Not the models: float weights barely shrink.
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/plain text/html text/css application/javascript text/javascript application/json application/manifest+json application/wasm image/svg+xml
+</IfModule>
+
+# Cross-origin isolation for SharedArrayBuffer (multi-threaded CPU backend of the inference runtime)
+<IfModule mod_headers.c>
+    Header set Cross-Origin-Opener-Policy "same-origin"
+    Header set Cross-Origin-Embedder-Policy "require-corp"
+</IfModule>
+
+# Caching: bundled assets and models carry content hashes in their names, the runtime's files a version folder –
+# all immutable. The model list must always be fresh.
+<IfModule mod_headers.c>
+    <If "%{REQUEST_URI} =~ m#/(_astro|ort)/# || %{REQUEST_URI} =~ m#/models/.+\.onnx$#">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </If>
+    <If "%{REQUEST_URI} =~ m#/models/manifest\.json$#">
+        Header set Cache-Control "no-cache"
+    </If>
+</IfModule>
+
+# Security headers (the Content-Security-Policy itself is a <meta> in index.astro – it works on GitHub Pages
+# too; here only what a <meta> cannot do). Same values in public/coi-serviceworker.js for GitHub Pages –
+# keep both in sync.
+<IfModule mod_headers.c>
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    Header always set Content-Security-Policy "frame-ancestors 'none'"
+    Header always set X-Frame-Options "DENY"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "accelerometer=(), autoplay=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), midi=(), payment=(), serial=(), usb=(), xr-spatial-tracking=(), fullscreen=(self), clipboard-write=(self)"
+</IfModule>

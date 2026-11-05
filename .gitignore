@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.astro/
+.env
+# downloaded checkpoints (npm run models)
+.cache/
+# generated: converted models (npm run models) and the runtime's wasm files (scripts/copy-ort.mjs)
+/public/models/
+/public/ort/
+/tests# local test pictures (user material) – only the unit tests are in git
+tests/*.png
+tests/*.jpg
+tests/*.jpeg
+tests/*.webp
+tests/*Zone.Identifier

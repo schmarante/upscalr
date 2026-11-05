@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+/* Select lists: dark popup (otherwise white text on white background, since the fields inherit text-white) */
+select {
+    color-scheme: dark;
+}
+select option,
+select optgroup {
+    background-color: #262626;
+    color: #f5f5f5;
+}
+
+/* Scrollbars: thin, light grey, rounded, no background (matching the panels).
+   Chromium/Safari via ::-webkit-scrollbar; Firefox only knows scrollbar-width/-color. */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+    background-color: rgb(255 255 255 / 0.18);
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: rgb(255 255 255 / 0.32); }
+::-webkit-scrollbar-button { display: none; }
+@-moz-document url-prefix() {
+    * { scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 0.22) transparent; }
+}
+
+/* the `hidden` attribute wins over display utilities (flex …) on the same element */
+[hidden] { display: none !important; }
+
+/* checkerboard behind transparent results (compare.ts sets --checker so the squares keep their screen size) */
+.checker {
+    background-color: #3a3a3a;
+    background-image: conic-gradient(#2a2a2a 25%, transparent 0 50%, #2a2a2a 0 75%, transparent 0);
+    background-size: calc(var(--checker, 12px) * 2) calc(var(--checker, 12px) * 2);
+}

@@ -1,0 +1,143 @@
+{
+    "page": {
+        "title": "UPSCALR – upscale images locally",
+        "description": "AI upscaling for photos, drawings and illustrations – right in your browser. Your images never leave your computer.",
+        "ogImageAlt": "UPSCALR logo",
+        "brand": "<b>UPSCALR</b> · AI upscaling in your browser",
+        "about": "About"
+    },
+    "start": {
+        "title": "Drop an image here",
+        "or": "or paste it from the clipboard (Ctrl+V)",
+        "pick": "Choose image",
+        "formats": "PNG · JPEG · WebP · AVIF · GIF · BMP",
+        "privacy": "Everything runs locally in your browser – your images never leave your computer."
+    },
+    "drop": {
+        "title": "Drop the image",
+        "hint": "It is processed only here in your browser."
+    },
+    "panel": {
+        "image": "Image",
+        "noImage": "No image yet",
+        "change": "Open image",
+        "content": "Content",
+        "photo": "Photo",
+        "drawing": "Drawing",
+        "quality": "Quality",
+        "fast": "Fast",
+        "best": "High",
+        "factor": "Factor",
+        "size": "{from} → {to} px",
+        "modelSize": "Download: {size} (once)",
+        "modelCached": "Models ready (offline)",
+        "start": "Upscale",
+        "again": "Upscale again",
+        "cancel": "Cancel",
+        "download": "Download",
+        "doneIn": "{time}",
+        "outdated": "settings changed",
+        "tooLarge": "Too large for {factor}× – the browser handles at most {max} px per side and {mp} megapixels.",
+        "backend": {
+            "webgpu": "Graphics card (WebGPU)",
+            "wasm": "Processor (WebAssembly)",
+            "pending": "Looking for a compute device …"
+        },
+        "precision": {
+            "fp16": "16 bit",
+            "fp32": "32 bit"
+        },
+        "background": "Background",
+        "keep": "Keep",
+        "remove": "Remove",
+        "needCutout": "At 1× there is only something to do when the background is removed.",
+        "startCutout": "Remove background",
+        "againCutout": "Remove background again"
+    },
+    "progress": {
+        "download": "Loading model … {loaded} / {total}",
+        "prepare": "Preparing model …",
+        "tiles": "Tile {done} / {total}",
+        "eta": "about {time} left",
+        "alpha": "Transferring transparency …",
+        "encode": "Writing file …",
+        "cutout": "Detecting the background …",
+        "refine": "Refining the edges …"
+    },
+    "view": {
+        "before": "Before",
+        "after": "After",
+        "fit": "Fit (0)",
+        "actual": "Actual size (1)",
+        "divider": "Before/after divider (arrow keys)"
+    },
+    "notice": {
+        "noWebgpu": {
+            "title": "No WebGPU available",
+            "message": "Upscaling runs on the processor and takes much longer. It is fastest in a current Chrome or Edge."
+        },
+        "noModels": {
+            "title": "AI models missing",
+            "message": "The models have not been generated yet (npm run models)."
+        },
+        "decode": {
+            "title": "Cannot open the image",
+            "message": "The browser cannot read this format: {name}"
+        },
+        "notImage": {
+            "title": "Not an image file",
+            "message": "{name} is not an image."
+        },
+        "formatFallback": {
+            "title": "Saved as {format}",
+            "message": "This browser cannot write {format} – the result was saved losslessly as {target}."
+        },
+        "tileReduced": {
+            "title": "Smaller tiles",
+            "message": "Not enough graphics memory – continuing with tiles of {size} px."
+        },
+        "error": {
+            "title": "Upscaling failed",
+            "download": "The model could not be loaded. Please check your connection.",
+            "model": "The model cannot be started on this device.",
+            "gpu-memory": "Not enough graphics memory, even for the smallest tiles.",
+            "too-large": "The result is too large for the browser's memory. Please choose 2× or a smaller image.",
+            "encode": "The file could not be written – the result is probably too large for the browser. Please choose 2×.",
+            "cancelled": "Cancelled.",
+            "unknown": "Unexpected error."
+        },
+        "alphaFormat": {
+            "title": "Saved as {format}",
+            "message": "{format} cannot store transparency – the cut-out picture was saved as {target}."
+        }
+    },
+    "languages": {
+        "de_de": "Deutsch",
+        "en_us": "English"
+    },
+    "about": {
+        "title": "About",
+        "close": "Close",
+        "description": "AI upscaling and background removal for photos, drawings and illustrations – entirely local in your browser, your images never leave your computer.",
+        "author": "Author",
+        "email": "Email",
+        "version": "Version",
+        "compute": "Compute",
+        "language": "Language",
+        "madeWith": "Designed with ❤️. Powered by Claude.",
+        "openSource": "UPSCALR is built on great open-source projects. Thanks to everyone who contributes to them!",
+        "runtime": "In the browser",
+        "models": "AI models",
+        "build": "Build tools",
+        "libs": {
+            "ort": "Runs the AI models on the graphics card (WebGPU) or the processor (WebAssembly)",
+            "coi": "Cross-origin isolation on static hosting (several processor cores)",
+            "realEsrgan": "Weights of the photo and drawing models (converted to ONNX for the browser)",
+            "astro": "Site generator",
+            "vite": "Build tool",
+            "tailwind": "Styling",
+            "typescript": "Programming language",
+            "birefnet": "Background removal: detects and removes the background (ready-made ONNX export)"
+        }
+    }
+}

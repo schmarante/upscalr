@@ -1,0 +1,236 @@
+---
+import '../styles/global.css';
+import de from '../i18n/de_de.json';
+import { formatHtml } from '../scripts/i18n';
+import logoSource from '../assets/upscalr.svg?raw';
+import { icon } from '../scripts/icons';
+import { BUTTON_PRIMARY, BUTTON_SECONDARY } from '../scripts/ui-controls';
+
+// German default texts rendered at build time (no flash); app.ts calls applyDom() for other languages
+const tr = (k: string): string => k.split('.').reduce<any>((n, p) => n?.[p], de) ?? k;
+const logo = (cls: string) => logoSource.replace('<svg', `<svg class="${cls}" aria-hidden="true"`);
+
+// Social preview (Open Graph / Twitter): absolute URLs only when `site` is set (SITE_URL at build time)
+const base = import.meta.env.BASE_URL;
+const abs = (path: string) => (Astro.site ? new URL(base + path, Astro.site).href : base + path);
+
+// Content-Security-Policy as <meta> (works on GitHub Pages too; header-only parts – frame-ancestors,
+// X-Frame-Options, Permissions-Policy … – come from public/.htaccess resp. public/coi-serviceworker.js).
+// Only in the production build: the dev server needs its HMR websocket and inline scripts.
+// wasm-unsafe-eval: the inference runtime (WebAssembly); worker blob: the runtime's helper threads;
+// connect: only this site (models, runtime) – images never go anywhere; img blob: the picture and the result.
+const CSP = [
+    "default-src 'self'",
+    "script-src 'self' 'wasm-unsafe-eval'",
+    "worker-src 'self' blob:",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self' data: blob:",
+    "manifest-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'none'",
+].join('; ');
+
+const seg = 'flex gap-1 rounded-md bg-white/5 p-0.5';
+const segButton = 'flex-1 rounded px-2 py-1 text-center text-white/70';
+---
+
+<!doctype html>
+<html lang="de">
+    <head>
+        <meta charset="UTF-8" />
+        {import.meta.env.PROD && <meta http-equiv="Content-Security-Policy" content={CSP} />}
+        <meta name="referrer" content="strict-origin-when-cross-origin" />
+        <!-- Cross-origin isolation where the server cannot send COOP/COEP (GitHub Pages): coi-serviceworker sets
+             the headers itself (one reload on the first visit). Already isolated (own server via .htaccess, dev
+             server) → it does nothing. Messages only with ?debug. -->
+        <script is:inline src={`${base}coi-config.js`}></script>
+        <script is:inline src={`${base}coi-serviceworker.js`}></script>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title data-i18n="page.title">{tr('page.title')}</title>
+        <meta name="description" content={tr('page.description')} />
+        <meta name="theme-color" content="#171717" />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="UPSCALR" />
+        <meta property="og:title" content={tr('page.title')} />
+        <meta property="og:description" content={tr('page.description')} />
+        <meta property="og:url" content={abs('')} />
+        <meta property="og:image" content={abs('og-image.png')} />
+        <meta property="og:image:type" content="image/png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:image:alt" content={tr('page.ogImageAlt')} />
+        <meta property="og:locale" content="de_DE" />
+        <meta property="og:locale:alternate" content="en_US" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <link rel="icon" type="image/png" href={`${base}favicon-96x96.png`} sizes="96x96" />
+        <link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />
+        <link rel="shortcut icon" href={`${base}favicon.ico`} />
+        <link rel="apple-touch-icon" sizes="180x180" href={`${base}apple-touch-icon.png`} />
+        <meta name="apple-mobile-web-app-title" content="UPSCALR" />
+        <link rel="manifest" href={`${base}site.webmanifest`} />
+    </head>
+    <!-- no text selection in the interface; texts worth copying opt back in with select-text (notices, About) -->
+    <body class="m-0 overflow-hidden bg-neutral-900 font-sans text-white select-none">
+        <!-- before/after view (compare.ts): both pictures at output size, transformed together; the result is clipped
+             at the divider -->
+        <div id="stage" class="absolute inset-0 touch-none overflow-hidden">
+            <div data-canvas hidden class="absolute top-0 left-0 origin-top-left">
+                <img data-before alt="" draggable="false" class="absolute inset-0 size-full max-w-none" />
+                <img data-after alt="" draggable="false" class="absolute inset-0 size-full max-w-none" />
+            </div>
+            <div data-divider hidden tabindex="0" role="separator" aria-orientation="vertical" data-i18n-aria="view.divider" aria-label={tr('view.divider')}
+                class="group absolute top-0 bottom-0 left-0 w-0 outline-none">
+                <div class="absolute inset-y-0 -left-px w-0.5 bg-white/90 shadow-[0_0_6px_rgb(0_0_0/0.6)]"></div>
+                <div class="absolute top-(--handle-y,50%) left-0 flex size-9 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center gap-0.5 rounded-full bg-black/60 text-white ring-2 ring-white/90 backdrop-blur-sm group-focus-visible:ring-sky-400">
+                    <svg viewBox="0 0 16 16" class="size-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 4 2 8l4 4M10 4l4 4-4 4" /></svg>
+                </div>
+                <span data-i18n="view.before" class="absolute top-(--label-y,1.25rem) right-3 rounded bg-black/60 px-2 py-0.5 text-[11px] whitespace-nowrap text-white/90 backdrop-blur-sm">{tr('view.before')}</span>
+                <span data-i18n="view.after" class="absolute top-(--label-y,1.25rem) left-3 rounded bg-black/60 px-2 py-0.5 text-[11px] whitespace-nowrap text-white/90 backdrop-blur-sm">{tr('view.after')}</span>
+            </div>
+        </div>
+
+        <!-- start: no picture yet -->
+        <div id="start" class="pointer-events-none absolute inset-0 flex items-center justify-center p-6 max-md:pb-[22rem] md:pl-80">
+            <div class="pointer-events-auto flex max-w-md flex-col items-center gap-3 rounded-xl border-2 border-dashed border-white/15 bg-black/25 px-8 py-10 text-center">
+                <Fragment set:html={icon('image', 'size-10 text-white/35')} />
+                <div class="text-lg font-medium" data-i18n="start.title">{tr('start.title')}</div>
+                <div class="text-sm text-white/60" data-i18n="start.or">{tr('start.or')}</div>
+                <button type="button" data-pick class={`${BUTTON_PRIMARY} mt-1 text-sm`}>
+                    <Fragment set:html={icon('open', 'size-4')} />
+                    <span data-i18n="start.pick">{tr('start.pick')}</span>
+                </button>
+                <div class="text-xs text-white/45" data-i18n="start.formats">{tr('start.formats')}</div>
+                <div class="max-w-xs text-xs text-balance text-white/45" data-i18n="start.privacy">{tr('start.privacy')}</div>
+            </div>
+        </div>
+
+        <!-- settings panel (app.ts): left on wide windows, at the bottom on narrow ones -->
+        <div id="panel" class="absolute top-5 left-5 z-10 flex max-h-[calc(100dvh-4rem)] w-72 flex-col gap-3 overflow-auto rounded-lg bg-black/60 p-3 text-xs text-white/90 backdrop-blur-sm max-md:inset-x-3 max-md:top-auto max-md:bottom-10 max-md:max-h-[55dvh] max-md:w-auto">
+            <div class="flex items-center gap-2">
+                <Fragment set:html={logo('size-6 shrink-0 text-sky-400')} />
+                <span class="text-sm font-semibold tracking-wide text-white">UPSCALR</span>
+            </div>
+
+            <div data-file class="flex items-center gap-2 rounded-md bg-white/5 p-2">
+                <Fragment set:html={icon('image', 'size-4 shrink-0 text-white/50')} />
+                <div class="min-w-0 flex-1">
+                    <div data-file-name class="truncate text-white">{tr('panel.noImage')}</div>
+                    <div data-file-size class="truncate text-white/50"></div>
+                </div>
+                <button type="button" data-pick class="shrink-0 rounded p-1 text-white/60 hover:bg-white/10 hover:text-white" data-i18n-title="panel.change" title={tr('panel.change')}>
+                    <Fragment set:html={icon('open', 'size-4')} />
+                </button>
+            </div>
+
+            <div data-upscale-rows class="flex flex-col gap-3 transition-opacity">
+            <div class="flex flex-col gap-1.5">
+                <span class="text-white/50" data-i18n="panel.content">{tr('panel.content')}</span>
+                <div data-seg="content" class={seg} role="group">
+                    <button type="button" data-value="photo" class={segButton} data-i18n="panel.photo">{tr('panel.photo')}</button>
+                    <button type="button" data-value="drawing" class={segButton} data-i18n="panel.drawing">{tr('panel.drawing')}</button>
+                </div>
+            </div>
+            <div data-quality-row class="flex flex-col gap-1.5">
+                <span class="text-white/50" data-i18n="panel.quality">{tr('panel.quality')}</span>
+                <div data-seg="quality" class={seg} role="group">
+                    <button type="button" data-value="fast" class={segButton} data-i18n="panel.fast">{tr('panel.fast')}</button>
+                    <button type="button" data-value="quality" class={segButton} data-i18n="panel.best">{tr('panel.best')}</button>
+                </div>
+            </div>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <span class="text-white/50" data-i18n="panel.factor">{tr('panel.factor')}</span>
+                <div data-seg="factor" class={seg} role="group">
+                    <button type="button" data-value="1" class={segButton}>1×</button>
+                    <button type="button" data-value="2" class={segButton}>2×</button>
+                    <button type="button" data-value="4" class={segButton}>4×</button>
+                </div>
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <span class="text-white/50" data-i18n="panel.background">{tr('panel.background')}</span>
+                <div data-seg="background" class={seg} role="group">
+                    <button type="button" data-value="keep" class={segButton} data-i18n="panel.keep">{tr('panel.keep')}</button>
+                    <button type="button" data-value="remove" class={segButton} data-i18n="panel.remove">{tr('panel.remove')}</button>
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-0.5 text-white/60">
+                <div data-size class="tabular-nums"></div>
+                <div data-model></div>
+                <div data-too-large hidden class="text-amber-300"></div>
+                <div data-hint hidden class="text-amber-300"></div>
+            </div>
+
+            <button type="button" data-run disabled class={`${BUTTON_PRIMARY} py-2 text-sm`}>
+                <Fragment set:html={icon('upscale', 'size-4')} />
+                <span data-run-label>{tr('panel.start')}</span>
+            </button>
+            <button type="button" data-cancel hidden class={`${BUTTON_SECONDARY} py-2 text-sm`}>
+                <Fragment set:html={icon('cross', 'size-3.5')} />
+                <span data-i18n="panel.cancel">{tr('panel.cancel')}</span>
+            </button>
+
+            <div data-progress hidden aria-live="polite">
+                <div data-label class="mb-1.5"></div>
+                <div class="h-1 overflow-hidden rounded bg-white/15">
+                    <div data-bar class="h-full w-0 rounded bg-amber-400 transition-[width] duration-200"></div>
+                </div>
+                <div data-detail class="mt-1 text-white/50 tabular-nums"></div>
+            </div>
+
+            <div data-download-box hidden class="flex flex-col gap-1.5 border-t border-white/10 pt-3">
+                <a data-download hidden class={`${BUTTON_PRIMARY} py-2 text-sm`} href="#">
+                    <Fragment set:html={icon('download', 'size-4')} />
+                    <span data-i18n="panel.download">{tr('panel.download')}</span>
+                </a>
+                <div data-download-name class="truncate text-white/80 select-text"></div>
+                <div data-result-info class="text-white/50 tabular-nums"></div>
+            </div>
+
+            <div data-backend class="text-[11px] text-white/40"></div>
+        </div>
+
+        <!-- zoom tools (bottom right) -->
+        <div id="view-tools" hidden class="absolute right-5 bottom-5 z-10 flex items-center gap-0.5 rounded-lg bg-black/60 p-1 text-xs text-white/80 backdrop-blur-sm max-md:hidden">
+            <button type="button" data-fit class="rounded p-1.5 hover:bg-white/10 hover:text-white" data-i18n-title="view.fit" title={tr('view.fit')}>
+                <Fragment set:html={icon('fit', 'size-4')} />
+            </button>
+            <button type="button" data-actual class="rounded p-1.5 hover:bg-white/10 hover:text-white" data-i18n-title="view.actual" title={tr('view.actual')}>
+                <Fragment set:html={icon('actual-size', 'size-4')} />
+            </button>
+            <span data-zoom class="min-w-12 px-1.5 text-right text-white/60 tabular-nums"></span>
+        </div>
+
+        <!-- drop area -->
+        <div id="drop-overlay" hidden class="pointer-events-none absolute inset-3 z-20 flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-sky-400/80 bg-black/55 p-6 text-center backdrop-blur-sm">
+            <div class="text-lg font-medium" data-i18n="drop.title">{tr('drop.title')}</div>
+            <div class="max-w-md text-sm text-balance text-white/60" data-i18n="drop.hint">{tr('drop.hint')}</div>
+        </div>
+
+        <!-- brand line bottom left with "About" -->
+        <div class="pointer-events-none absolute bottom-3 left-5 flex items-center gap-1.5 text-[11px] tracking-wide text-white max-md:hidden">
+            <span class="opacity-50" data-i18n-html="page.brand" set:html={formatHtml(tr('page.brand'))}></span>
+            <span class="opacity-30">·</span>
+            <button type="button" data-about class="pointer-events-auto opacity-50 hover:underline hover:opacity-90" data-i18n="page.about">{tr('page.about')}</button>
+        </div>
+        <button type="button" data-about-mobile class="absolute right-3 bottom-3 z-10 text-[11px] text-white/50 md:hidden" data-i18n="page.about">{tr('page.about')}</button>
+
+        <dialog id="about" class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-lg bg-black/70 p-0 text-xs text-white/90 backdrop-blur-md backdrop:bg-black/40">
+            <div class="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
+                <span class="font-medium" data-i18n="about.title">{tr('about.title')}</span>
+                <button type="button" data-about-close class="text-white/50 hover:text-white" data-i18n-title="about.close" title={tr('about.close')}>
+                    <Fragment set:html={icon('close', 'size-3.5')} />
+                </button>
+            </div>
+            <div data-about-body class="max-h-[70dvh] overflow-auto px-4 py-3"></div>
+        </dialog>
+
+        <input id="file-input" type="file" accept="image/*" hidden />
+        <script>
+            import '../scripts/app';
+        </script>
+    </body>
+</html>

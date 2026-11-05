@@ -1,0 +1,143 @@
+{
+    "page": {
+        "title": "UPSCALR – Bilder lokal hochskalieren",
+        "description": "KI-Hochskalierung für Fotos, Zeichnungen und Illustrationen – direkt im Browser. Deine Bilder verlassen nie deinen Rechner.",
+        "ogImageAlt": "UPSCALR-Logo",
+        "brand": "<b>UPSCALR</b> · KI-Hochskalierung im Browser",
+        "about": "Über"
+    },
+    "start": {
+        "title": "Bild hierher ziehen",
+        "or": "oder aus der Zwischenablage einfügen (Strg+V)",
+        "pick": "Bild auswählen",
+        "formats": "PNG · JPEG · WebP · AVIF · GIF · BMP",
+        "privacy": "Alles läuft lokal in deinem Browser – deine Bilder verlassen nie deinen Rechner."
+    },
+    "drop": {
+        "title": "Bild loslassen",
+        "hint": "Es wird nur hier in deinem Browser verarbeitet."
+    },
+    "panel": {
+        "image": "Bild",
+        "noImage": "Noch kein Bild gewählt",
+        "change": "Bild öffnen",
+        "content": "Inhalt",
+        "photo": "Foto",
+        "drawing": "Zeichnung",
+        "quality": "Qualität",
+        "fast": "Schnell",
+        "best": "Hoch",
+        "factor": "Faktor",
+        "size": "{from} → {to} px",
+        "modelSize": "Download: {size} (einmalig)",
+        "modelCached": "Modelle bereit (offline)",
+        "start": "Hochskalieren",
+        "again": "Erneut hochskalieren",
+        "cancel": "Abbrechen",
+        "download": "Herunterladen",
+        "doneIn": "{time}",
+        "outdated": "Einstellungen geändert",
+        "tooLarge": "Zu groß für {factor}× – der Browser schafft höchstens {max} px Kantenlänge und {mp} Megapixel.",
+        "backend": {
+            "webgpu": "Grafikkarte (WebGPU)",
+            "wasm": "Prozessor (WebAssembly)",
+            "pending": "Rechenwerk wird gesucht …"
+        },
+        "precision": {
+            "fp16": "16 bit",
+            "fp32": "32 bit"
+        },
+        "background": "Hintergrund",
+        "keep": "Behalten",
+        "remove": "Entfernen",
+        "needCutout": "Bei 1× gibt es nur etwas zu tun, wenn der Hintergrund entfernt wird.",
+        "startCutout": "Freistellen",
+        "againCutout": "Erneut freistellen"
+    },
+    "progress": {
+        "download": "Modell wird geladen … {loaded} / {total}",
+        "prepare": "Modell wird vorbereitet …",
+        "tiles": "Kachel {done} / {total}",
+        "eta": "noch ca. {time}",
+        "alpha": "Transparenz wird übertragen …",
+        "encode": "Datei wird geschrieben …",
+        "cutout": "Hintergrund wird erkannt …",
+        "refine": "Kanten werden verfeinert …"
+    },
+    "view": {
+        "before": "Vorher",
+        "after": "Nachher",
+        "fit": "Einpassen (0)",
+        "actual": "Originalgröße (1)",
+        "divider": "Trennlinie Vorher/Nachher (Pfeiltasten)"
+    },
+    "notice": {
+        "noWebgpu": {
+            "title": "Kein WebGPU verfügbar",
+            "message": "Das Hochskalieren läuft auf dem Prozessor und dauert deutlich länger. Am schnellsten geht es in einem aktuellen Chrome oder Edge."
+        },
+        "noModels": {
+            "title": "KI-Modelle fehlen",
+            "message": "Die Modelle wurden noch nicht erzeugt (npm run models)."
+        },
+        "decode": {
+            "title": "Bild lässt sich nicht öffnen",
+            "message": "Dieses Format kann der Browser nicht lesen: {name}"
+        },
+        "notImage": {
+            "title": "Keine Bilddatei",
+            "message": "{name} ist kein Bild."
+        },
+        "formatFallback": {
+            "title": "Gespeichert als {format}",
+            "message": "{format} kann dieser Browser nicht schreiben – das Ergebnis wurde verlustfrei als {target} gespeichert."
+        },
+        "tileReduced": {
+            "title": "Kleinere Kacheln",
+            "message": "Der Grafikspeicher reicht nicht – es geht mit {size} px großen Kacheln weiter."
+        },
+        "error": {
+            "title": "Hochskalieren fehlgeschlagen",
+            "download": "Das Modell konnte nicht geladen werden. Bitte die Verbindung prüfen.",
+            "model": "Das Modell lässt sich auf diesem Gerät nicht starten.",
+            "gpu-memory": "Der Grafikspeicher reicht auch für die kleinsten Kacheln nicht.",
+            "too-large": "Das Ergebnis ist zu groß für den Speicher des Browsers. Bitte 2× wählen oder ein kleineres Bild nehmen.",
+            "encode": "Die Datei konnte nicht geschrieben werden – das Ergebnis ist vermutlich zu groß für den Browser. Bitte 2× wählen.",
+            "cancelled": "Abgebrochen.",
+            "unknown": "Unerwarteter Fehler."
+        },
+        "alphaFormat": {
+            "title": "Gespeichert als {format}",
+            "message": "{format} kann keine Transparenz speichern – das freigestellte Bild wurde als {target} gespeichert."
+        }
+    },
+    "languages": {
+        "de_de": "Deutsch",
+        "en_us": "English"
+    },
+    "about": {
+        "title": "Über",
+        "close": "Schließen",
+        "description": "KI-Hochskalierung und Freistellen für Fotos, Zeichnungen und Illustrationen – komplett lokal im Browser, deine Bilder verlassen nie deinen Rechner.",
+        "author": "Autor",
+        "email": "E-Mail",
+        "version": "Version",
+        "compute": "Rechenwerk",
+        "language": "Sprache",
+        "madeWith": "Designed with ❤️. Powered by Claude.",
+        "openSource": "UPSCALR baut auf großartigen Open-Source-Projekten auf. Danke an alle, die daran mitarbeiten!",
+        "runtime": "Im Browser",
+        "models": "KI-Modelle",
+        "build": "Zum Bauen",
+        "libs": {
+            "ort": "Ausführung der KI-Modelle auf Grafikkarte (WebGPU) oder Prozessor (WebAssembly)",
+            "coi": "Cross-Origin-Isolation auf statischem Hosting (mehrere Prozessorkerne)",
+            "realEsrgan": "Gewichte der Modelle für Fotos und Zeichnungen (für den Browser nach ONNX umgewandelt)",
+            "astro": "Seitengenerator",
+            "vite": "Build-Werkzeug",
+            "tailwind": "Gestaltung",
+            "typescript": "Programmiersprache",
+            "birefnet": "Freistellen: Hintergrund erkennen und entfernen (fertiger ONNX-Export)"
+        }
+    }
+}

@@ -64,6 +64,7 @@ Keine Lizenzverletzungen, keine Nennung Dritter ohne Freigabe, basiert komplett 
 - Bibliotheken aktuell halten (wie RINDR); beim Update der Runtime: Kachelzeiten und Referenzvergleich wiederholen (`docs/inference.md`, `docs/models.md`).
 - `public/models/`, `public/ort/`, `.cache/` nicht committen (erzeugt); Testbilder in `tests/` sind ausgenommen.
 - **Keine persönlichen Details im Repo (Wunsch des Nutzers, 05.11.2026):** keine lokalen Pfade (Benutzerprofile, Home-Verzeichnisse), keine Angaben zum Rechner (Hardware, Betriebssystem-Einrichtung, Netz), keine Konto-/Benutzernamen – weder in Code, Kommentaren, Doku noch Commits. Erlaubt: die lokale Domain `upscalr.dev.dasachtegebot.local` sowie Name und E-Mail im „Über“-Fenster (`ABOUT` in config.ts). Rechnerspezifisches bleibt lokal.
+- **Branches (Wunsch des Nutzers):** gearbeitet wird in `develop`; erst wenn alles passt, `develop` nach `master` übernehmen – das löst den Deploy aus. Committen/Pushen nur auf Ansage.
 - **Dokumentation:** Diese Datei ist Übersicht, Regeln und Ziele. Details in `docs/` (Karte unten). Vor Arbeit an einem Bereich die passende Datei lesen; nach Änderungen dort nachtragen (Verhalten, Entscheidungen des Nutzers, verworfene Wege, Fallstricke, Prüfwege).
 
 ## Karte der Detail-Dokumentation
@@ -82,4 +83,4 @@ Keine Lizenzverletzungen, keine Nennung Dritter ohne Freigabe, basiert komplett 
 - MVP komplett, geprüft in Chrome (Desktop-GPU, WebGPU fp16) und mit `?backend=wasm` (CPU): alle drei Modelle, 2×/4×, PNG/JPEG/Alpha, Abbrechen, „zu groß“, Englisch, Handy-Ansicht, Unterverzeichnis-Build. Gekachelt vs. am Stück: 48–59 dB, keine Nähte.
 - Tempo: 2000×1333 → 4× (43 MP) in 3,6 s (schnell) bzw. 20,6 s (Qualität).
 - `npm test` (Kachel-Logik), `npm run check` (0 Fehler).
-- GitHub-Repo verbunden; Workflow für Pages liegt bereit (Pages-Quelle „GitHub Actions“ noch einstellen).
+- GitHub-Repo verbunden, erster Stand auf `master` und `develop`; Pages-Quelle „GitHub Actions“. Erster Deploy scheiterte an der Branch-Regel der Umgebung `github-pages` (`docs/deployment.md`).

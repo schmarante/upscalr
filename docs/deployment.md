@@ -28,7 +28,11 @@ Projekt `upscalr`, Docroot `dist` → https://upscalr.dev.dasachtegebot.local/ l
 
 ## GitHub Pages (`.github/workflows/static.yml`)
 
-Bei Push auf `master` (und von Hand): `npm ci` → `npm test` → Checkpoints aus `actions/cache` (Schlüssel = Hash von `models.json`) → `npm run models` → `npm run build` mit `BASE_PATH`/`SITE_URL` aus `configure-pages` (Repo-Variable `SITE_URL` hat Vorrang) → `dist/` veröffentlichen. In den Pages-Einstellungen muss die Quelle „GitHub Actions“ sein. Ziel: GitHub Pages dieses Repos (`https://<konto>.github.io/upscalr/`, noch nicht eingerichtet).
+**Ablauf (Entscheidung des Nutzers, 05.11.2026):** gearbeitet wird in `develop` (Standard-Branch auf GitHub); ist ein Stand fertig, wird `develop` nach `master` übernommen – der Push auf `master` löst den Deploy aus.
+
+Bei Push auf `master` (und von Hand): `npm ci` → `npm test` → Checkpoints aus `actions/cache` (Schlüssel = Hash von `models.json`) → `npm run models` → `npm run build` mit `BASE_PATH`/`SITE_URL` aus `configure-pages` (Repo-Variable `SITE_URL` hat Vorrang) → `dist/` veröffentlichen. In den Pages-Einstellungen muss die Quelle „GitHub Actions“ sein (umgestellt am 05.11.2026, vorher „Deploy from a branch“). Ziel: GitHub Pages dieses Repos (`https://<konto>.github.io/upscalr/`).
+
+Fallstrick: Die Umgebung `github-pages` kann Deploys auf bestimmte Branches beschränken. Erster Lauf (05.11.2026): Build ok, Deploy abgelehnt – „Branch "master" is not allowed to deploy to github-pages due to environment protection rules“. Abhilfe: Settings → Environments → `github-pages` → Deployment branches: `master` erlauben.
 
 ## Cross-Origin-Isolation
 

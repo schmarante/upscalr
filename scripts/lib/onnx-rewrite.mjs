@@ -6,6 +6,9 @@
 // Each such block (one module scope with offset conv, modulator conv, 2·sigmoid mask and the regular conv weight) is
 // replaced by one DeformConv node (opset 19, native kernel in the runtime) – same result.
 //
+// opsInFloat32: half-float models run chosen ops (Pad) in float32 – the runtime's WebGPU Pad shader has a 16-bit path
+// (bitcast<vec2<f16>> of the pad value) that a browser rejected ("ShaderModule with 'Pad' label is invalid").
+//
 // limitNodeWidth: a shader may bind only a limited number of
 // storage buffers (8 are guaranteed by WebGPU, many GPUs offer 16), and the runtime turns a Concat / Split node into
 // one shader with a buffer per input/output. Exported models contain Concat nodes with up to 1024 inputs and Split
@@ -327,4 +330,44 @@ export function fuseDeformConv(modelBytes) {
         return f;
     });
     return { bytes: serializeMessage(newModel), fused };
+}
+
+// --- run chosen ops in float32 (half-float models) ---
+
+/**
+ * Wrap every node of the given op types in casts: half-float inputs → float32, op, result → half float. Only the float
+ * inputs are cast (data and pad value of Pad; the pads themselves are int64). Returns { bytes, wrapped }.
+ */
+export function opsInFloat32(modelBytes, ops = ['Pad']) {
+    const model = parseMessage(modelBytes);
+    const graphField = model.find(f => f.num === 7);
+    const graph = parseMessage(graphField.value);
+    const want = new Set(ops);
+    const floatInputs = { Pad: [0, 2] };   // input indices that carry tensor data (not shapes/indices)
+    let wrapped = 0, counter = 0;
+    const newGraph = [];
+    for (const f of graph) {
+        if (f.num !== 1) { newGraph.push(f); continue; }
+        const n = readNode(f.value);
+        if (!want.has(n.op) || n.domain) { newGraph.push(f); continue; }
+        const base = n.name || n.op;
+        const inputs = n.inputs.map((name, i) => {
+            if (!name || !(floatInputs[n.op] ?? [0]).includes(i)) return name;
+            const c = `${base}/to_f32_${counter++}`;
+            newGraph.push({ num: 1, wire: 2, value: nodeBytes({ inputs: [name], outputs: [c], name: c, op: 'Cast', attrs: { to: FLOAT } }) });
+            return c;
+        });
+        const out32 = `${base}/f32_out`;
+        // the node itself with the new inputs/output; its attributes are kept as they were
+        const fields = parseMessage(f.value).filter(x => x.num !== 1 && x.num !== 2);
+        const w = new Writer();
+        for (const i of inputs) w.string(1, i);
+        w.string(2, out32);
+        const head = w.finish();
+        newGraph.push({ num: 1, wire: 2, value: new Uint8Array([...head, ...serializeMessage(fields)]) });
+        newGraph.push({ num: 1, wire: 2, value: nodeBytes({ inputs: [out32], outputs: [n.outputs[0]], name: `${base}/to_f16`, op: 'Cast', attrs: { to: FLOAT16 } }) });
+        wrapped++;
+    }
+    const newModel = model.map(f => (f === graphField ? { num: 7, wire: 2, value: serializeMessage(newGraph) } : f));
+    return { bytes: serializeMessage(newModel), wrapped };
 }

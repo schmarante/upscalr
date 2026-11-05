@@ -10,6 +10,8 @@ AI upscaling and background removal for photos, drawings and illustrations – r
 
 **PNG · JPEG · WebP · AVIF · GIF · BMP · 2× / 4× · background removal**
 
+<a href="https://schmarante.github.io/upscalr/"><img src="https://img.shields.io/badge/%E2%96%B6%20Live%20demo-schmarante.github.io%2Fupscalr-2ea44f?style=for-the-badge" alt="Live demo"></a>
+
 Drop an image into the window, pick photo or drawing and get a sharp, enlarged version in seconds. Everything runs locally on your GPU – **no upload, no server, no install. Your images never leave your computer.**
 
 ## Highlights

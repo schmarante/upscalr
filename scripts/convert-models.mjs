@@ -12,7 +12,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { readCheckpoint } from './lib/pth-reader.mjs';
 import { BUILDERS, FLOAT, FLOAT16 } from './lib/nets.mjs';
-import { fuseDeformConv, limitNodeWidth, MAX_WIDTH } from './lib/onnx-rewrite.mjs';
+import { fuseDeformConv, limitNodeWidth, opsInFloat32, MAX_WIDTH } from './lib/onnx-rewrite.mjs';
 
 const CONVERTER_VERSION = '1';
 const root = path.dirname(path.dirname(new URL(import.meta.url).pathname));
@@ -89,7 +89,14 @@ for (const model of models) {
             // spelled-out deformable convolutions → DeformConv, wide Concat/Split → trees (scripts/lib/onnx-rewrite.mjs)
             const fusedModel = fuseDeformConv(src);
             if (fusedModel.fused) console.log(`  ${variant}: ${fusedModel.fused} deformable convolutions fused into DeformConv`);
-            const { bytes, concat, split, dropped } = limitNodeWidth(fusedModel.bytes);
+            // half floats: Pad in float32 (a browser rejects the runtime's 16-bit Pad shader)
+            let narrowInput = fusedModel.bytes;
+            if (variant === 'fp16') {
+                const p32 = opsInFloat32(narrowInput, ['Pad']);
+                if (p32.wrapped) console.log(`  ${variant}: ${p32.wrapped} Pad nodes run in float32`);
+                narrowInput = p32.bytes;
+            }
+            const { bytes, concat, split, dropped } = limitNodeWidth(narrowInput);
             if (concat || split) console.log(`  ${variant}: ${concat} Concat + ${split} Split nodes narrowed to ≤ ${MAX_WIDTH} inputs/outputs, ${dropped} unused constants dropped`);
             writeVariant(entry, model, variant, bytes);
         }

@@ -39,7 +39,7 @@ export interface RunRequest {
 }
 
 export type ToWorker =
-    | { type: 'init'; ortBase: string; debug: boolean; forceCpu: boolean; forceFp32: boolean; verbose: boolean }
+    | { type: 'init'; ortBase: string; debug: boolean; forceCpu: boolean; forceFp32: boolean; verbose: boolean; failGpu: string }
     | RunRequest
     | { type: 'cancel'; id: number };
 
@@ -58,5 +58,8 @@ export type FromWorker =
     | { type: 'ready'; backend: Backend; precision: Precision; adapter: string }
     | { type: 'progress'; id: number; progress: Progress }
     | { type: 'notice'; id: number; code: 'tile-reduced'; tileSize: number }
+    | { type: 'notice'; id: number; code: 'cpu-fallback'; role: 'upscale' | 'cutout' }
+    /** ?debug: a WebGPU shader the browser rejected – message and the offending source lines */
+    | { type: 'debug-gpu'; label: string; message: string; line: number; source: string }
     | { type: 'done'; id: number; blob: Blob; width: number; height: number; mime: string; alpha: boolean; ms: number }
     | { type: 'error'; id: number; code: ErrorCode; message: string };

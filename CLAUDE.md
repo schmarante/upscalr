@@ -79,6 +79,7 @@ Keine Lizenzverletzungen, keine Nennung Dritter ohne Freigabe, basiert komplett 
 | `docs/licenses.md` | Lizenzen – eigene Lizenz, Pflichten (BSD-3, MIT), wo Namen Dritter stehen dürfen, offene Punkte (kommerziell, GFPGAN, Vektorisieren). |
 
 ## Stand (2026-11-05)
+- Firefox (05.11.2026): Runtime-Shader „Pad“ wird abgelehnt → Freistell-Modell läuft dort automatisch auf der CPU (Hinweis); genaue Shader-Meldung per `?debug` noch einzusammeln (`docs/inference.md`).
 - Freistellen (05.11.2026): Maske 1,1–1,3 s auf dem Testrechner (Desktop-GPU, WebGPU + CPU-Threads für DeformConv), CPU-Weg 2,7 s; gegen das Originalmodell gleich (fp32 Logits ±0,0001).
 - MVP komplett, geprüft in Chrome (Desktop-GPU, WebGPU fp16) und mit `?backend=wasm` (CPU): alle drei Modelle, 2×/4×, PNG/JPEG/Alpha, Abbrechen, „zu groß“, Englisch, Handy-Ansicht, Unterverzeichnis-Build. Gekachelt vs. am Stück: 48–59 dB, keine Nähte.
 - Tempo: 2000×1333 → 4× (43 MP) in 3,6 s (schnell) bzw. 20,6 s (Qualität).

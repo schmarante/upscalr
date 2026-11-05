@@ -10,11 +10,12 @@ export class UpscaleError extends Error {
     constructor(public code: ErrorCode, message: string) { super(message); }
 }
 
+export type WorkerNotice = Extract<FromWorker, { type: 'notice' }>;
 type Job = {
     resolve: (r: UpscaleResult) => void;
     reject: (e: UpscaleError) => void;
     onProgress: (p: Progress) => void;
-    onTileReduced: (size: number) => void;
+    onNotice: (n: WorkerNotice) => void;
 };
 
 const BASE = import.meta.env.BASE_URL;
@@ -40,6 +41,8 @@ export class Upscaler {
     info: BackendInfo | null = null;
     /** the backend is known (first time) or changed (WebGPU failed → CPU) */
     onBackend: (info: BackendInfo) => void = () => {};
+    /** ?debug: shaders the browser rejected (also on globalThis.__upscalr.gpuErrors) */
+    readonly gpuErrors: Extract<FromWorker, { type: 'debug-gpu' }>[] = [];
     readonly ready: Promise<BackendInfo>;
 
     constructor() {
@@ -54,10 +57,15 @@ export class Upscaler {
                 this.onBackend(this.info);
                 return;
             }
+            if (msg.type === 'debug-gpu') {
+                this.gpuErrors.push(msg);
+                console.warn(`WebGPU shader "${msg.label}" rejected, line ${msg.line}: ${msg.message}\n${msg.source}`);
+                return;
+            }
             const job = this.jobs.get(msg.id);
             if (!job) return;
             if (msg.type === 'progress') job.onProgress(msg.progress);
-            else if (msg.type === 'notice') job.onTileReduced(msg.tileSize);
+            else if (msg.type === 'notice') job.onNotice(msg);
             else if (msg.type === 'done') {
                 this.jobs.delete(msg.id);
                 job.resolve({ blob: msg.blob, width: msg.width, height: msg.height, mime: msg.mime, alpha: msg.alpha, ms: msg.ms });
@@ -71,19 +79,20 @@ export class Upscaler {
             for (const [id, job] of this.jobs) { this.jobs.delete(id); job.reject(new UpscaleError('unknown', e.message)); }
         };
         // test switches: ?backend=wasm forces the CPU backend, ?precision=fp32 the 32-bit models,
-        // ?ortlog=verbose (with ?debug) logs the runtime's node placement
+        // ?ortlog=verbose (with ?debug) logs the runtime's node placement, ?failgpu=cutout|upscale (with ?debug) simulates
+        // a shader the browser rejects (tests the CPU fallback)
         const q = new URLSearchParams(location.search);
         this.worker.postMessage({
             type: 'init', ortBase: publicUrl(`ort/${__ORT_VERSION__}/`), debug: DEBUG,
-            forceCpu: q.get('backend') === 'wasm', forceFp32: q.get('precision') === 'fp32', verbose: DEBUG && q.get('ortlog') === 'verbose',
+            forceCpu: q.get('backend') === 'wasm', forceFp32: q.get('precision') === 'fp32', verbose: DEBUG && q.get('ortlog') === 'verbose', failGpu: DEBUG ? q.get('failgpu') ?? '' : '',
         });
     }
 
     /** start a job; the bitmap is handed over to the worker (unusable here afterwards) */
-    run(req: Omit<RunRequest, 'type' | 'id'>, onProgress: Job['onProgress'], onTileReduced: Job['onTileReduced']) {
+    run(req: Omit<RunRequest, 'type' | 'id'>, onProgress: Job['onProgress'], onNotice: Job['onNotice']) {
         const id = this.nextId++;
         const promise = new Promise<UpscaleResult>((resolve, reject) => {
-            this.jobs.set(id, { resolve, reject, onProgress, onTileReduced });
+            this.jobs.set(id, { resolve, reject, onProgress, onNotice });
         });
         this.worker.postMessage({ ...req, type: 'run', id } satisfies RunRequest, [req.bitmap]);
         return { promise, cancel: () => this.worker.postMessage({ type: 'cancel', id }) };

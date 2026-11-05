@@ -109,6 +109,11 @@
         "alphaFormat": {
             "title": "Saved as {format}",
             "message": "{format} cannot store transparency – the cut-out picture was saved as {target}."
+        },
+        "cpuFallback": {
+            "title": "Partly running on the processor",
+            "cutout": "This browser cannot run the background removal model on the graphics card – it runs on the processor instead (a bit slower).",
+            "upscale": "This browser cannot run the model on the graphics card – it runs on the processor instead (much slower)."
         }
     },
     "languages": {

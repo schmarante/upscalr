@@ -109,6 +109,11 @@
         "alphaFormat": {
             "title": "Gespeichert als {format}",
             "message": "{format} kann keine Transparenz speichern – das freigestellte Bild wurde als {target} gespeichert."
+        },
+        "cpuFallback": {
+            "title": "Läuft teilweise auf dem Prozessor",
+            "cutout": "Dieser Browser kann das Freistell-Modell nicht auf der Grafikkarte ausführen – es läuft deshalb auf dem Prozessor (etwas langsamer).",
+            "upscale": "Dieser Browser kann das Modell nicht auf der Grafikkarte ausführen – es läuft deshalb auf dem Prozessor (deutlich langsamer)."
         }
     },
     "languages": {

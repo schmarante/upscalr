@@ -5,7 +5,9 @@
 //
 // Backend: WebGPU when the browser offers an adapter (half floats when it has shader-f16), else the runtime's CPU
 // backend (WebAssembly, multi-threaded when the page is cross-origin isolated). If WebGPU fails while a session is
-// created, the worker switches to the CPU for good and tells the page (a new "ready").
+// created, the worker switches to the CPU for good and tells the page (a new "ready"). If a model fails later because the
+// browser rejects one of the runtime's shaders (seen in Firefox: "ShaderModule with 'Pad' label is invalid" in the
+// cut-out model), only that model is moved to the CPU and the job continues (notice "cpu-fallback").
 import * as ort from 'onnxruntime-web/webgpu';
 import type { Backend, ErrorCode, FromWorker, ModelRef, Precision, RunRequest, ToWorker } from './types';
 import { blendBand, blendTileIntoBand, planTiles, ramp, reduceOutput, tileInput } from './tiling';
@@ -22,6 +24,7 @@ class RunError extends Error {
 
 let debug = false;
 let verbose = false;
+let failGpu = '';   // ?debug&failgpu=<role>: the first WebGPU run of that model fails like a rejected shader
 const log = (...args: unknown[]) => { if (debug) console.info('[worker]', ...args); };
 
 let backend: Backend = 'wasm';
@@ -29,7 +32,8 @@ let precision: Precision = 'fp32';
 let adapterName = '';
 /** one session per task, kept for the next picture as long as the model stays the same */
 type Role = 'upscale' | 'cutout';
-const sessions: Partial<Record<Role, { url: string; session: ort.InferenceSession; bytes: Uint8Array<ArrayBuffer> }>> = {};
+type Entry = { url: string; session: ort.InferenceSession; bytes: Uint8Array<ArrayBuffer>; ep: Backend };
+const sessions: Partial<Record<Role, Entry>> = {};
 const cancelled = new Set<number>();
 let queue: Promise<void> = Promise.resolve();
 
@@ -49,16 +53,44 @@ async function init(ortBase: string, forceCpu: boolean, forceFp32: boolean) {
     } catch (e) {
         log('no WebGPU adapter', e);
     }
+    if (debug && backend === 'webgpu') watchShaders();
     // threads for the CPU backend – and with WebGPU for the nodes that stay on the CPU (the cut-out model's
     // DeformConv: 1 thread ≈ 5.4 s per mask, all cores much less – docs/inference.md)
     ort.env.wasm.numThreads = cpuThreads();
     post({ type: 'ready', backend, precision, adapter: adapterName });
 }
 
-async function createSession(bytes: Uint8Array<ArrayBuffer>) {
-    if (backend === 'webgpu') {
+/**
+ * ?debug: report shaders the browser rejects with the message and the offending lines (the runtime only says "invalid").
+ * Wraps GPUDevice.createShaderModule – the runtime creates its shaders through the JavaScript API.
+ */
+function watchShaders() {
+    const proto = (self as unknown as { GPUDevice?: { prototype: GPUDevice } }).GPUDevice?.prototype;
+    if (!proto) return;
+    const create = proto.createShaderModule;
+    proto.createShaderModule = function (this: GPUDevice, desc: GPUShaderModuleDescriptor) {
+        const module = create.call(this, desc);
+        module.getCompilationInfo().then(info => {
+            for (const m of info.messages) {
+                if (m.type !== 'error') continue;
+                const lines = desc.code.split('\n');
+                const from = Math.max(0, m.lineNum - 3);
+                const source = lines.slice(from, m.lineNum + 2).map((l, i) => `${from + i + 1}: ${l}`).join('\n');
+                post({ type: 'debug-gpu', label: desc.label ?? '', message: m.message, line: m.lineNum, source });
+            }
+        }).catch(() => {});
+        return module;
+    };
+}
+
+/** a shader the browser rejects (not a memory problem) – retrying with smaller tiles would not help */
+const isShaderError = (e: unknown) => /ShaderModule|compute pipeline|shader module|WGSL/i.test(String(e));
+
+async function createSession(bytes: Uint8Array<ArrayBuffer>, cpuOnly = false): Promise<{ session: ort.InferenceSession; ep: Backend }> {
+    if (backend === 'webgpu' && !cpuOnly) {
         try {
-            return await ort.InferenceSession.create(bytes, { executionProviders: ['webgpu'], graphOptimizationLevel: 'all', logSeverityLevel: verbose ? 0 : debug ? 2 : 3, logVerbosityLevel: verbose ? 1 : 0 });
+            const session = await ort.InferenceSession.create(bytes, { executionProviders: ['webgpu'], graphOptimizationLevel: 'all', logSeverityLevel: verbose ? 0 : debug ? 2 : 3, logVerbosityLevel: verbose ? 1 : 0 });
+            return { session, ep: 'webgpu' };
         } catch (e) {
             console.warn('WebGPU session failed, switching to the CPU backend:', e);
             backend = 'wasm';
@@ -68,12 +100,21 @@ async function createSession(bytes: Uint8Array<ArrayBuffer>) {
         }
     }
     // a half-float model also runs on the CPU (the runtime inserts conversions), only slower
-    return ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+    return { session: await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' }), ep: 'wasm' };
 }
 
-async function useModel(role: Role, ref: ModelRef, req: RunRequest) {
+/** move one model to the CPU for good (its WebGPU shaders are rejected by this browser) */
+async function toCpu(role: Role, req: RunRequest, cause: unknown) {
+    const entry = sessions[role]!;
+    console.warn(`${role} model fails on WebGPU, running it on the CPU:`, cause);
+    await entry.session.release();
+    Object.assign(entry, await createSession(entry.bytes, true));
+    post({ type: 'notice', id: req.id, code: 'cpu-fallback', role });
+}
+
+async function useModel(role: Role, ref: ModelRef, req: RunRequest): Promise<Entry> {
     const current = sessions[role];
-    if (current && current.url === ref.url) return current.session;
+    if (current && current.url === ref.url) return current;
     await current?.session.release();
     delete sessions[role];
     let bytes: Uint8Array<ArrayBuffer>;
@@ -85,15 +126,16 @@ async function useModel(role: Role, ref: ModelRef, req: RunRequest) {
     }
     pruneModels(req.keepUrls);
     post({ type: 'progress', id: req.id, progress: { phase: 'prepare' } });
-    let session: ort.InferenceSession;
+    let created: { session: ort.InferenceSession; ep: Backend };
     try {
-        session = await createSession(bytes);
+        created = await createSession(bytes);
     } catch (e) {
         throw new RunError('model', String(e));
     }
-    sessions[role] = { url: ref.url, session, bytes };
-    log('session', role, backend, precision, ref.url);
-    return session;
+    const entry: Entry = { url: ref.url, bytes, ...created };
+    sessions[role] = entry;
+    log('session', role, entry.ep, precision, ref.url);
+    return entry;
 }
 
 /** run all tiles into `out` (RGBA, alpha already set); throws on GPU errors so the caller can retry smaller */
@@ -117,6 +159,7 @@ async function runTiles(req: RunRequest, session: ort.InferenceSession, rgba: Ui
             const wx = ramp(xs, c, tw, s);
             const input = new ort.Tensor('float32', tileInput(rgba, w, h, pad, xs[c], ys[r], tw, th), [1, 3, th, tw]);
             const t0 = debug ? performance.now() : 0;
+            if (failGpu === 'upscale' && sessions.upscale?.ep === 'webgpu') throw new Error("simulated: ShaderModule with 'Pad' label is invalid");
             const result = await session.run({ input });
             input.dispose();
             if (debug) log(`tile ${done + 1}/${total}: ${Math.round(performance.now() - t0)} ms`);
@@ -129,29 +172,32 @@ async function runTiles(req: RunRequest, session: ort.InferenceSession, rgba: Ui
         }
         blendBand(out, outW, outH, band, th * s, ys[r] * s, pad * s, ramp(ys, r, th, s));
     }
-    log(`${total} tiles of ${tw}×${th} in ${Math.round(performance.now() - started)} ms (${backend}, ${precision})`);
+    log(`${total} tiles of ${tw}×${th} in ${Math.round(performance.now() - started)} ms (${sessions.upscale?.ep}, ${precision})`);
 }
 
 /** upscaling with smaller tiles when the GPU runs out of memory */
 async function upscale(req: RunRequest, rgba: Uint8ClampedArray, w: number, h: number, out: Uint8ClampedArray) {
-    let session = await useModel('upscale', req.upscale!, req);
+    const entry = await useModel('upscale', req.upscale!, req);
     let tile = req.tile.size;
     for (;;) {
         try {
-            await runTiles(req, session, rgba, w, h, out, tile);
+            await runTiles(req, entry.session, rgba, w, h, out, tile);
             return;
         } catch (e) {
             if (e instanceof RunError) throw e;
-            const entry = sessions.upscale;
+            if (entry.ep === 'webgpu' && isShaderError(e)) {
+                await toCpu('upscale', req, e);
+                continue;
+            }
             // most likely the GPU ran out of memory: smaller tiles with a fresh session
-            if (backend !== 'webgpu' || tile / 2 < req.tile.minSize || !entry) {
-                throw new RunError(backend === 'webgpu' ? 'gpu-memory' : 'unknown', String(e));
+            if (entry.ep !== 'webgpu' || tile / 2 < req.tile.minSize) {
+                throw new RunError(entry.ep === 'webgpu' ? 'gpu-memory' : 'unknown', String(e));
             }
             console.warn(`tile ${tile} failed, retrying with ${tile / 2}:`, e);
             tile /= 2;
             post({ type: 'notice', id: req.id, code: 'tile-reduced', tileSize: tile });
             await entry.session.release();
-            entry.session = session = await createSession(entry.bytes);
+            Object.assign(entry, await createSession(entry.bytes));
         }
     }
 }
@@ -162,7 +208,7 @@ async function upscale(req: RunRequest, rgba: Uint8ClampedArray, w: number, h: n
  */
 async function cutoutMask(req: RunRequest, bitmap: ImageBitmap): Promise<Uint8ClampedArray<ArrayBuffer>> {
     const { size, mean, std } = req.cutout!;
-    const session = await useModel('cutout', req.cutout!, req);
+    const entry = await useModel('cutout', req.cutout!, req);
     if (cancelled.has(req.id)) throw new RunError('cancelled');
     post({ type: 'progress', id: req.id, progress: { phase: 'cutout' } });
     const canvas = new OffscreenCanvas(size, size);
@@ -179,14 +225,25 @@ async function cutoutMask(req: RunRequest, bitmap: ImageBitmap): Promise<Uint8Cl
     }
     const tensor = new ort.Tensor('float32', input, [1, 3, size, size]);
     const t0 = performance.now();
-    const result = await session.run({ [session.inputNames[0]]: tensor });
+    const run = () => {
+        if (failGpu === 'cutout' && entry.ep === 'webgpu') throw new Error("simulated: ShaderModule with 'Pad' label is invalid");
+        return entry.session.run({ [entry.session.inputNames[0]]: tensor });
+    };
+    let result: ort.InferenceSession.OnnxValueMapType;
+    try {
+        result = await run();
+    } catch (e) {
+        if (entry.ep !== 'webgpu' || !isShaderError(e)) throw e;
+        await toCpu('cutout', req, e);
+        result = await run();
+    }
     tensor.dispose();
-    const y = result[session.outputNames[0]];
+    const y = result[entry.session.outputNames[0]];
     const logits = y.data as Float32Array;
     const mask = new Uint8ClampedArray(plane);
     for (let i = 0; i < plane; i++) mask[i] = 255 / (1 + Math.exp(-logits[i]));
     y.dispose();
-    log(`cutout mask ${size}×${size} in ${Math.round(performance.now() - t0)} ms (${backend}, ${precision})`);
+    log(`cutout mask ${size}×${size} in ${Math.round(performance.now() - t0)} ms (${entry.ep}, ${precision})`);
     return mask;
 }
 
@@ -294,6 +351,7 @@ scope.onmessage = (ev: MessageEvent<ToWorker>) => {
     if (msg.type === 'init') {
         debug = msg.debug;
         verbose = msg.verbose;
+        failGpu = msg.failGpu;
         queue = queue.then(() => init(msg.ortBase, msg.forceCpu, msg.forceFp32));
     } else if (msg.type === 'run') {
         queue = queue.then(() => run(msg));

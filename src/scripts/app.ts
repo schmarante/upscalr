@@ -252,8 +252,12 @@ async function upscale() {
         tile: { ...TILING },
         quality: { ...ENCODE },
         keepUrls: allModelUrls(),
-    }, showProgress, size => {
-        showNotice({ id: 'tile', icon: 'info', title: t('notice.tileReduced.title'), message: t('notice.tileReduced.message', { size }), timeout: 8000 });
+    }, showProgress, n => {
+        if (n.code === 'tile-reduced') {
+            showNotice({ id: 'tile', icon: 'info', title: t('notice.tileReduced.title'), message: t('notice.tileReduced.message', { size: n.tileSize }), timeout: 8000 });
+        } else {
+            showNotice({ id: `cpu-${n.role}`, icon: 'info', title: t('notice.cpuFallback.title'), message: t(`notice.cpuFallback.${n.role}`), timeout: 12000 });
+        }
     });
     running = job;
     showProgress({ phase: 'prepare' });
@@ -377,4 +381,4 @@ cached = await cachedModels();
 await upscaler.ready;
 updatePanel();
 document.body.classList.add('ready');
-if (DEBUG) Object.assign(globalThis, { __upscalr: { openFile, upscale, compare, upscaler, get result() { return result; } } });
+if (DEBUG) Object.assign(globalThis, { __upscalr: { openFile, upscale, compare, upscaler, gpuErrors: upscaler.gpuErrors, get result() { return result; } } });

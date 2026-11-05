@@ -41,7 +41,8 @@ const cpuThreads = () => (scope.crossOriginIsolated ? Math.max(1, Math.min(navig
 
 async function init(ortBase: string, forceCpu: boolean, forceFp32: boolean) {
     ort.env.wasm.wasmPaths = ortBase;
-    ort.env.logLevel = debug ? 'warning' : 'error';
+    // runtime log only with ?ortlog=verbose – its warnings (e.g. one line per removed constant) drown everything else
+    ort.env.logLevel = verbose ? 'verbose' : 'error';
     try {
         const adapter = forceCpu ? null : await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' });
         if (adapter) {
@@ -89,7 +90,7 @@ const isShaderError = (e: unknown) => /ShaderModule|compute pipeline|shader modu
 async function createSession(bytes: Uint8Array<ArrayBuffer>, cpuOnly = false): Promise<{ session: ort.InferenceSession; ep: Backend }> {
     if (backend === 'webgpu' && !cpuOnly) {
         try {
-            const session = await ort.InferenceSession.create(bytes, { executionProviders: ['webgpu'], graphOptimizationLevel: 'all', logSeverityLevel: verbose ? 0 : debug ? 2 : 3, logVerbosityLevel: verbose ? 1 : 0 });
+            const session = await ort.InferenceSession.create(bytes, { executionProviders: ['webgpu'], graphOptimizationLevel: 'all', logSeverityLevel: verbose ? 0 : 3, logVerbosityLevel: verbose ? 1 : 0 });
             return { session, ep: 'webgpu' };
         } catch (e) {
             console.warn('WebGPU session failed, switching to the CPU backend:', e);
@@ -100,7 +101,7 @@ async function createSession(bytes: Uint8Array<ArrayBuffer>, cpuOnly = false): P
         }
     }
     // a half-float model also runs on the CPU (the runtime inserts conversions), only slower
-    return { session: await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' }), ep: 'wasm' };
+    return { session: await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all', logSeverityLevel: verbose ? 0 : 3, logVerbosityLevel: verbose ? 1 : 0 }), ep: 'wasm' };
 }
 
 /** move one model to the CPU for good (its WebGPU shaders are rejected by this browser) */

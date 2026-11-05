@@ -35,7 +35,7 @@ Aufträge laufen nacheinander (Promise-Kette im Worker). Abbrechen wirkt zwische
 - Import `onnxruntime-web/webgpu` = nativer WebGPU-EP (nicht der ältere JSEP-Weg); derselbe wasm-Build enthält den CPU-EP. Der native EP kennt `PRelu` (die Tabelle in `docs/webgpu-operators.md` des Pakets beschreibt noch JSEP und listet es nicht – geprüft: keine Knoten auf der CPU, Warnungen mit `?debug` an).
 - Vite-Alias in `astro.config.mjs` auf `dist/ort.webgpu.min.mjs` (die Variante **ohne** eingebetteten Loader): wasm + Loader kommen aus `public/ort/<version>/` (`ort.env.wasm.wasmPaths`). Grund: die Hilfs-Threads der Runtime laden ihr eigenes Modul als Worker – beim gebündelten Loader wäre das unser Worker-Chunk.
 - `scripts/copy-ort.mjs` (vor `dev` und `build`) kopiert `ort-wasm-simd-threaded.asyncify.{mjs,wasm}` (~28 MB, komprimiert ~¼) nach `public/ort/<version>/`, löscht alte Versionen. Versionsordner = Cache-Bruch bei Updates (`__ORT_VERSION__` per Vite-`define`). `public/ort/` ist nicht in git.
-- Sitzungen: `graphOptimizationLevel: 'all'`; mit `?debug` Log-Stufe Warnung. Je Aufgabe eine Sitzung (`upscale`, `cutout`), sie bleibt für weitere Bilder mit demselben Modell bestehen; Modellwechsel → `release()`.
+- Sitzungen: `graphOptimizationLevel: 'all'`; Log der Runtime nur mit `?ortlog=verbose` (sonst nur Fehler – ihre Warnungen fluteten die Konsole und verdeckten die eigenen Meldungen). Je Aufgabe eine Sitzung (`upscale`, `cutout`), sie bleibt für weitere Bilder mit demselben Modell bestehen; Modellwechsel → `release()`.
 
 ## Freistellen (`cutoutMask` im Worker)
 

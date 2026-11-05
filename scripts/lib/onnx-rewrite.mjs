@@ -114,6 +114,24 @@ function nodeBytes({ inputs, outputs, name, op, attrs = {} }) {
     return w.finish();
 }
 
+/**
+ * Drop Constant nodes nobody reads any more (e.g. the old size inputs of replaced Split nodes) – the runtime would
+ * remove them itself, with one warning per constant in the console.
+ */
+function dropUnusedConstants(graphFields) {
+    const used = new Set(graphFields.filter(f => f.num === 12).map(f => strings(parseMessage(f.value), 1)[0]));
+    const nodes = graphFields.map(f => (f.num === 1 ? readNode(f.value) : null));
+    for (const n of nodes) if (n) for (const i of n.inputs) used.add(i);
+    let dropped = 0;
+    const kept = graphFields.filter((_, i) => {
+        const n = nodes[i];
+        if (!n || n.op !== 'Constant' || n.outputs.some(o => used.has(o))) return true;
+        dropped++;
+        return false;
+    });
+    return { fields: kept, dropped };
+}
+
 const chunk = (list, n) => Array.from({ length: Math.ceil(list.length / n) }, (_, i) => list.slice(i * n, (i + 1) * n));
 
 /**
@@ -192,8 +210,9 @@ export function limitNodeWidth(modelBytes, maxWidth = MAX_WIDTH) {
         writeTensor(w, t);
         newGraph.push({ num: 5, wire: 2, value: w.finish() });
     }
-    const newModel = model.map(f => (f === graphField ? { num: 7, wire: 2, value: serializeMessage(newGraph) } : f));
-    return { bytes: serializeMessage(newModel), concat: concats, split: splits };
+    const { fields, dropped } = dropUnusedConstants(newGraph);
+    const newModel = model.map(f => (f === graphField ? { num: 7, wire: 2, value: serializeMessage(fields) } : f));
+    return { bytes: serializeMessage(newModel), concat: concats, split: splits, dropped };
 }
 
 // --- DeformConv fusion ---
@@ -296,8 +315,9 @@ export function fuseDeformConv(modelBytes) {
         if (!remove.has(i)) newGraph.push(f);
     }
     // DeformConv needs opset 19 in the default domain (the other ops of these models mean the same in 17 and 19)
+    const { fields } = dropUnusedConstants(newGraph);
     const newModel = model.map(f => {
-        if (f === graphField) return { num: 7, wire: 2, value: serializeMessage(newGraph) };
+        if (f === graphField) return { num: 7, wire: 2, value: serializeMessage(fields) };
         if (f.num === 8) {
             const op = parseMessage(f.value);
             if ((strings(op, 1)[0] ?? '') === '' && signed(op.find(x => x.num === 2).value) < 19) {

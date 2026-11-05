@@ -89,8 +89,8 @@ for (const model of models) {
             // spelled-out deformable convolutions → DeformConv, wide Concat/Split → trees (scripts/lib/onnx-rewrite.mjs)
             const fusedModel = fuseDeformConv(src);
             if (fusedModel.fused) console.log(`  ${variant}: ${fusedModel.fused} deformable convolutions fused into DeformConv`);
-            const { bytes, concat, split } = limitNodeWidth(fusedModel.bytes);
-            if (concat || split) console.log(`  ${variant}: ${concat} Concat + ${split} Split nodes narrowed to ≤ ${MAX_WIDTH} inputs/outputs`);
+            const { bytes, concat, split, dropped } = limitNodeWidth(fusedModel.bytes);
+            if (concat || split) console.log(`  ${variant}: ${concat} Concat + ${split} Split nodes narrowed to ≤ ${MAX_WIDTH} inputs/outputs, ${dropped} unused constants dropped`);
             writeVariant(entry, model, variant, bytes);
         }
         manifest.models[model.id] = entry;

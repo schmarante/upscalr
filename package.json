@@ -8,6 +8,7 @@
     "dev": "astro dev",
     "predev": "node scripts/copy-ort.mjs",
     "models": "node scripts/convert-models.mjs",
+    "models:fetch": "node scripts/models-release.mjs fetch",
     "prebuild": "node scripts/sync-readme.mjs && node scripts/copy-ort.mjs",
     "build": "astro build",
     "preview": "astro preview",

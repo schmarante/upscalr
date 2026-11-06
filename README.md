@@ -31,11 +31,11 @@ Drop an image into the window, pick photo or drawing and get a sharp, enlarged v
 
 ```sh
 npm ci
-npm run models   # downloads the model checkpoints once and converts them to ONNX (public/models/)
-npm run build    # → dist/
+npm run models:fetch   # the converted models from this repository's release (public/models/)
+npm run build          # → dist/
 ```
 
-`npm run models` needs nothing but Node: the checkpoints are read and rebuilt as ONNX graphs by our own converter (`scripts/convert-models.mjs`).
+The models are converted by our own converter (`scripts/convert-models.mjs`, nothing but Node: the checkpoints are read and rebuilt as ONNX graphs) and published as a release of this repository – neither the build nor the browser fetches anything from third-party servers. `npm run models` converts them yourself from the published checkpoints; only needed after changing `scripts/models.json` or the converter (the next deploy then publishes a new release).
 
 ## License
 

@@ -6,7 +6,8 @@ npm-Skripte, DDEV, `dist/`, Unterverzeichnis, GitHub Pages, Cross-Origin-Isolati
 
 | Skript | Was |
 |---|---|
-| `npm run models` | Modelle konvertieren → `public/models/` (`docs/models.md`); einmal nach dem Klonen und nach Änderungen an `scripts/models.json` |
+| `npm run models:fetch` | die fertigen Modelle aus dem Release dieses Repos → `public/models/` (Größe + SHA-256 geprüft, vorhandene übersprungen); **der normale Weg nach dem Klonen** – nur unser GitHub, keine Fremdquelle |
+| `npm run models` | Modelle selbst konvertieren → `public/models/` (`docs/models.md`) – lädt die Checkpoints von den Quellen der Autoren; nur nötig, wenn `scripts/models.json` oder der Konverter geändert wurde (dafür gibt es noch kein Release) |
 | `npm run build` | vorher `sync-readme.mjs` (README „Built with“) + `copy-ort.mjs` (Runtime-wasm), dann `astro build` → **`dist/`** |
 | `npm run dev` | Dev-Server (Port 4321, mit COOP/COEP-Headern); vorher `copy-ort.mjs` |
 | `npm test` | Kachel-Tests in Node (`tests/*.test.ts`, Node führt TypeScript direkt aus) |
@@ -30,9 +31,17 @@ Projekt `upscalr`, Docroot `dist` → https://upscalr.dev.dasachtegebot.local/ l
 
 **Ablauf (Entscheidung des Nutzers, 05.11.2026):** gearbeitet wird in `develop` (Standard-Branch auf GitHub); ist ein Stand fertig, wird `develop` nach `master` übernommen – der Push auf `master` löst den Deploy aus.
 
-Bei Push auf `master` (und von Hand): `npm ci` → `npm test` → Checkpoints aus `actions/cache` (Schlüssel = Hash von `models.json`) → `npm run models` → `npm run build` mit `BASE_PATH`/`SITE_URL` aus `configure-pages` (Repo-Variable `SITE_URL` hat Vorrang) → `dist/` veröffentlichen. In den Pages-Einstellungen muss die Quelle „GitHub Actions“ sein (umgestellt am 05.11.2026, vorher „Deploy from a branch“). Ziel: GitHub Pages dieses Repos (`https://<konto>.github.io/upscalr/`).
+Bei Push auf `master` (und von Hand): `npm ci` → `npm test` → **Modelle aus dem eigenen Release** (s.u.) → `npm run build` mit `BASE_PATH`/`SITE_URL` aus `configure-pages` (Repo-Variable `SITE_URL` hat Vorrang) → `dist/` veröffentlichen. In den Pages-Einstellungen muss die Quelle „GitHub Actions“ sein (umgestellt am 05.11.2026, vorher „Deploy from a branch“). Ziel: GitHub Pages dieses Repos (`https://<konto>.github.io/upscalr/`).
 
-**Größe:** GitHub Pages veröffentlicht höchstens 1 GB. `dist/` hatte 655 MB; das Modell zum Schärfen kommt deshalb nur als fp16 (129 MB statt zusätzlich 259 MB fp32, `precisions` in `models.json`) → rund 790 MB. Vor jedem neuen großen Modell nachrechnen. Sein Checkpoint (271 MB) kommt von Google Drive (offizielle Quelle; einmal pro Änderung an `models.json`, danach aus dem Actions-Cache) – scheitert der Download dort, Quelle tauschen (Prüfsumme bleibt gleich).
+### Modelle aus dem eigenen Release (06.11.2026, Priorität des Nutzers: nichts von Drittservern außer unseren GitHub-Repos)
+
+- Die umgewandelten Modelle liegen als Dateien eines **Pre-Release dieses Repos** (`models-<hash>`, nie „latest“), zusammen mit den Lizenztexten. Der Hash (`node scripts/models-release.mjs key`) läuft über `scripts/models.json`, `convert-models.mjs` und `scripts/lib/*.mjs` – alles, was den Inhalt bestimmt.
+- Deploy: `models-release.mjs fetch` holt Manifest + Modelle von `github.com/<repo>/releases/download/<tag>/` (Größe + SHA-256 aus dem Manifest geprüft). Gibt es das Release noch nicht (Code 2 – Modelle oder Konverter geändert), wandelt der Lauf **einmal** aus den Checkpoints um (`actions/cache` + `npm run models`) und legt das Ergebnis per `gh release create` mit allen Dateien an – `gh` erstellt dabei erst einen Entwurf, lädt hoch und veröffentlicht danach (nie halb hochgeladen sichtbar; funktioniert auch mit „unveränderlichen Releases“). Ohne Manifest gilt ein Release als nicht vorhanden; ein älteres ohne Manifest wird ergänzt. Danach nie wieder eine Fremdquelle für diesen Stand. Dafür braucht der Workflow `contents: write`.
+- Warum nicht im Git-Repo: GitHub lehnt Dateien über 100 MB ab (drei Modelle sind größer), jede Modellversion bliebe für immer in der Historie. Warum nicht Git LFS: GitHub Free enthält 10 GiB Speicher / 10 GiB Download im Monat, jeder Deploy lädt ~760 MB. Release-Dateien: bis 2 GiB je Datei, kein Kontingent. Der Actions-Cache allein reicht nicht (Einträge verfallen nach 7 Tagen ohne Zugriff → seltene Deploys luden alles neu von den Quellen der Autoren).
+- Die Runtime (`public/ort/`) kommt aus dem npm-Paket (`copy-ort.mjs`), der Browser lädt alles von der Seite selbst (CSP `connect-src 'self'`).
+- Prüfweg (06.11.2026): Abruf ohne Release → Code 2 mit Hinweis; mit einem lokalen Server als Quelle (`--base`) → alle 17 Modelle + Manifest geprüft und byte-gleich, veraltete Datei entfernt, zweiter Lauf lädt nur das Manifest. Exit-Code-Logik des Workflow-Schritts unter `bash -e` geprüft. Das erste echte Release entsteht beim nächsten Deploy.
+
+**Größe:** GitHub Pages veröffentlicht höchstens 1 GB. `dist/` hatte 655 MB; das Modell zum Schärfen kommt deshalb nur als fp16 (129 MB statt zusätzlich 259 MB fp32, `precisions` in `models.json`) → rund 790 MB. Vor jedem neuen großen Modell nachrechnen. Sein Checkpoint (271 MB) kommt von Google Drive (offizielle Quelle) – nur noch beim Umwandeln eines neuen Stands (s.o.); scheitert der Download dort, Quelle tauschen (Prüfsumme bleibt gleich).
 
 Fallstrick: Die Umgebung `github-pages` kann Deploys auf bestimmte Branches beschränken. Erster Lauf (05.11.2026): Build ok, Deploy abgelehnt – „Branch "master" is not allowed to deploy to github-pages due to environment protection rules“. Abhilfe: Settings → Environments → `github-pages` → Deployment branches: `master` erlauben.
 

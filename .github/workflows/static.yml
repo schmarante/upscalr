@@ -1,4 +1,7 @@
-# Converts the models, builds the Astro site (dist/) and deploys it to the GitHub Pages site of this repository
+# Gets the converted models from this repository's own release, builds the Astro site (dist/) and deploys it to the
+# GitHub Pages site of this repository. Only when the model list or the converter changed (no release for this state
+# yet) are the published checkpoints converted once and kept as a new release – a deploy never needs a third-party
+# server otherwise (user's priority, docs/deployment.md).
 name: Deploy to GitHub Pages
 
 on:
@@ -9,9 +12,9 @@ on:
   # manual run from the Actions tab
   workflow_dispatch:
 
-# GITHUB_TOKEN may deploy to Pages
+# GITHUB_TOKEN may deploy to Pages and create the model release
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -45,16 +48,54 @@ jobs:
       - name: Tests
         run: npm test
 
-      # the model checkpoints (~90 MB) are downloaded once and kept until scripts/models.json changes
+      # release tag of the current model list + converter (scripts/models-release.mjs)
+      - name: Model release
+        id: models
+        run: echo "tag=$(node scripts/models-release.mjs key)" >> "$GITHUB_OUTPUT"
+
+      # the converted models (public/models/, not in git) from this repository's release, size and sha256 checked;
+      # exit code 2 = no release for this state yet
+      - name: Fetch models from the release
+        id: fetch
+        run: |
+          if node scripts/models-release.mjs fetch; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            code=$?
+            if [ "$code" -ne 2 ]; then exit "$code"; fi
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # --- only for a new state: convert once from the published checkpoints and keep the result as a release ---
       - name: Cache model checkpoints
+        if: steps.fetch.outputs.found != 'true'
         uses: actions/cache@v4
         with:
           path: .cache/weights
           key: weights-${{ hashFiles('scripts/models.json') }}
 
-      # checkpoints → ONNX (public/models/, not in git) – own converter, Node only (docs/models.md)
+      # checkpoints → ONNX – own converter, Node only (docs/models.md)
       - name: Convert models
+        if: steps.fetch.outputs.found != 'true'
         run: npm run models
+
+      # models and their licence texts as assets of a pre-release (never "latest"). With the files, gh creates the
+      # release as a draft, uploads everything and only then publishes it – never visible half uploaded, and it also
+      # works with immutable releases. A release without the manifest (an older interrupted upload) is completed.
+      - name: Publish models as a release
+        if: steps.fetch.outputs.found != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.models.outputs.tag }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" public/models/*.onnx public/licenses/*.txt --clobber
+            gh release upload "$TAG" public/models/manifest.json --clobber
+          else
+            gh release create "$TAG" public/models/*.onnx public/licenses/*.txt public/models/manifest.json \
+              --prerelease --target "$GITHUB_SHA" --title "Models $TAG" \
+              --notes "Converted models (ONNX) for this app, made by the deploy workflow from scripts/models.json with the app's own converter. The deploy and npm run models:fetch take them from here; the browser loads them from the site itself. Licences of the weights: the .txt files of this release (also public/licenses/)."
+          fi
 
       # project page lives in a sub directory (/upscalr/): base path and public URL come from the Pages settings.
       # Repository variable SITE_URL (Settings → Secrets and variables → Actions → Variables) overrides the URL,

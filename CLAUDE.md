@@ -9,7 +9,7 @@ Keine Lizenzverletzungen, keine Nennung Dritter ohne Freigabe, basiert komplett 
 - ONNX Runtime Web (WebGPU, Fallback WASM)
 - Inferenz im Web Worker (UI bleibt flüssig)
 - Modelle per Cache API zwischenspeichern
-- Modelle per eigenem Konverter (Node, ohne PyTorch) aus den veröffentlichten Checkpoints nach ONNX (`npm run models`)
+- Modelle per eigenem Konverter (Node, ohne PyTorch) aus den veröffentlichten Checkpoints nach ONNX (`npm run models`); die fertigen Dateien liegen als Release dieses Repos (`npm run models:fetch`, Deploy holt sie von dort)
 
 ## Modelle (ONNX)
 | Inhalt | Modell | Lizenz |
@@ -69,6 +69,7 @@ Keine Lizenzverletzungen, keine Nennung Dritter ohne Freigabe, basiert komplett 
 - Grenzen nie auf den Entwicklungsrechner abstimmen: fehlendes Feature / zu schwache Hardware = Hinweis im Panel-Stil (`notice.ts`) oder Rückfall, kein stiller Fehler.
 - Bibliotheken aktuell halten (wie RINDR); beim Update der Runtime: Kachelzeiten und Referenzvergleich wiederholen (`docs/inference.md`, `docs/models.md`).
 - `public/models/`, `public/ort/`, `.cache/` nicht committen (erzeugt); Testbilder in `tests/` sind ausgenommen.
+- **Keine Drittserver (Priorität des Nutzers, 06.11.2026):** Besucher und Deploy ziehen nichts von fremden Servern, nur von unseren GitHub-Repos – der Browser lädt alles von der Seite selbst (CSP `connect-src 'self'`), der Deploy die Modelle aus dem eigenen Release (`docs/deployment.md`). Quellen der Autoren nur beim Umwandeln eines neuen Modell-Stands.
 - **Keine persönlichen Details im Repo (Wunsch des Nutzers, 05.11.2026):** keine lokalen Pfade (Benutzerprofile, Home-Verzeichnisse), keine Angaben zum Rechner (Hardware, Betriebssystem-Einrichtung, Netz), keine Konto-/Benutzernamen – weder in Code, Kommentaren, Doku noch Commits. Erlaubt: die lokale Domain `upscalr.dev.dasachtegebot.local`, Name und E-Mail im „Über“-Fenster (`ABOUT` in config.ts) und der Live-Demo-Knopf mit der GitHub-Pages-Adresse in der README (Wunsch des Nutzers). Rechnerspezifisches bleibt lokal.
 - **Branches (Wunsch des Nutzers):** gearbeitet wird in `develop`; erst wenn alles passt, `develop` nach `master` übernehmen – das löst den Deploy aus. Committen/Pushen nur auf Ansage.
 - **Dokumentation:** Diese Datei ist Übersicht, Regeln und Ziele. Details in `docs/` (Karte unten). Vor Arbeit an einem Bereich die passende Datei lesen; nach Änderungen dort nachtragen (Verhalten, Entscheidungen des Nutzers, verworfene Wege, Fallstricke, Prüfwege).

@@ -30,7 +30,7 @@ Welches Modell zu welcher Auswahl gehört: `CONTENT` und `CUTOUT` in `src/script
 
 ## Konverter: `npm run models` (`scripts/convert-models.mjs`)
 
-Nur Node, kein Python, kein PyTorch – läuft in DDEV (`ddev exec npm run models`) und im CI gleich.
+Nur Node, kein Python, kein PyTorch – läuft in DDEV (`ddev exec npm run models`) und im CI gleich. Normalerweise braucht man ihn nicht: die fertigen Dateien liegen als Release dieses Repos (`npm run models:fetch`, `docs/deployment.md` „Modelle aus dem eigenen Release“); der Deploy wandelt nur um, wenn sich `models.json` oder der Konverter geändert hat, und veröffentlicht das Ergebnis dann selbst.
 
 1. Checkpoint nach `.cache/weights/` laden (einmal, mit Wiederholungen bei Netzfehlern – GitHub-Release-Downloads lieferten beim ersten Versuch zeitweise 504), Prüfsumme gegen `models.json`.
 2. `scripts/lib/pth-reader.mjs` liest den Checkpoint: Zip (gespeichert oder deflate, Zip64) + **abgesicherter Unpickler** – nur die Opcodes eines State-Dicts, nur erlaubte Python-Globals (`collections.OrderedDict`, `torch._utils._rebuild_tensor_v2`, `_rebuild_parameter`, `torch.*Storage`). Alles andere bricht ab: eine Datei kann keinen Code ausführen. Tensoren nur zusammenhängend (row-major), float32/16/64.

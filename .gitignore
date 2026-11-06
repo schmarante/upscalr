@@ -7,9 +7,6 @@ dist/
 # generated: converted models (npm run models) and the runtime's wasm files (scripts/copy-ort.mjs)
 /public/models/
 /public/ort/
-/tests# local test pictures (user material) – only the unit tests are in git
-tests/*.png
-tests/*.jpg
-tests/*.jpeg
-tests/*.webp
-tests/*Zone.Identifier
+# local test pictures (user material) – only the unit tests are in git: everything in tests/ except *.test.ts
+tests/*
+!tests/*.test.ts

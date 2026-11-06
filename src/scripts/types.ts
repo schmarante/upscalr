@@ -7,14 +7,15 @@ export type Precision = 'fp16' | 'fp32';
 export interface ModelFile { file: string; bytes: number; sha256: string }
 export interface CutoutInput { size: number; mean: number[]; std: number[] }
 export interface ManifestModel {
-    task: 'upscale' | 'cutout' | 'select';
+    task: 'upscale' | 'cutout' | 'select' | 'deblur';
     arch: string;
     /** upscale models: native scale (4) */
     scale?: number;
     params?: number;
     /** cutout model: square input size and normalisation */
     input?: CutoutInput;
-    variants: Record<Precision, ModelFile>;
+    /** fp32 and fp16 – a large model only fp16 (it runs on the CPU too) */
+    variants: Partial<Record<Precision, ModelFile>>;
 }
 /** a model file for a job: absolute URL and size (from the manifest) */
 export interface ModelRef { url: string; bytes: number }
@@ -30,9 +31,16 @@ export interface RunRequest {
     upscale: (ModelRef & { scale: number }) | null;
     /** background removal (null = keep the background) */
     cutout: (ModelRef & CutoutInput) | null;
+    /**
+     * soft photo (docs/inference.md "Weiche Fotos"): deblurring model, shrink factor before upscaling (1 or 2) and
+     * where the deblurring runs – 'thorough' at full size before shrinking, 'fast' after it (¼ of the work)
+     */
+    sharpen: (ModelRef & { shrink: 1 | 2; mode: SharpenMode }) | null;
     /** MIME type to write (the original format) */
     mime: string;
-    tile: { size: number; overlap: number; minSize: number; pad: number };
+    tile: TileSettings;
+    /** tiles of the deblurring model (multiples of `multiple`) */
+    sharpenTile: TileSettings & { multiple: number };
     quality: { jpeg: number; webp: number };
     /** grain 0…1 added at the end (grain.ts); can be changed afterwards without upscaling again ('grain') */
     grain: number;
@@ -52,8 +60,15 @@ export interface EditMaps {
     remove: Uint8ClampedArray;
 }
 
+export type SharpenMode = 'fast' | 'thorough';
+export interface TileSettings { size: number; overlap: number; minSize: number; pad: number }
+/** how sharp a picture really is (sharpness.ts) */
+export interface Sharpness { soft: boolean; width: number; halfWidth: number; edges: number }
+
 export type ToWorker =
     | { type: 'init'; ortBase: string; debug: boolean; forceCpu: boolean; forceFp32: boolean; verbose: boolean; failGpu: string }
+    /** measure how sharp a picture is (on opening it) */
+    | { type: 'analyze'; id: number; bitmap: ImageBitmap }
     | RunRequest
     | { type: 'cancel'; id: number }
     | { type: 'edit-start'; id: number; encoder: ModelRef & CutoutInput; decoder: ModelRef; maxSide: number; keepUrls: string[] }
@@ -70,7 +85,7 @@ export type Progress =
     | { phase: 'prepare' }
     | { phase: 'cutout' }
     | { phase: 'refine' }
-    | { phase: 'tiles'; done: number; total: number; tileSize: number }
+    | { phase: 'tiles'; done: number; total: number; tileSize: number; step: 'sharpen' | 'upscale' }
     | { phase: 'alpha' }
     | { phase: 'encode' };
 
@@ -78,7 +93,8 @@ export type FromWorker =
     | { type: 'ready'; backend: Backend; precision: Precision; adapter: string }
     | { type: 'progress'; id: number; progress: Progress }
     | { type: 'notice'; id: number; code: 'tile-reduced'; tileSize: number }
-    | { type: 'notice'; id: number; code: 'cpu-fallback'; role: 'upscale' | 'cutout' | 'select' }
+    | { type: 'notice'; id: number; code: 'cpu-fallback'; role: 'upscale' | 'cutout' | 'select' | 'deblur' }
+    | { type: 'analysis'; id: number; sharpness: Sharpness }
     /** ?debug: a WebGPU shader the browser rejected – message and the offending source lines */
     | { type: 'debug-gpu'; label: string; message: string; line: number; source: string }
     | { type: 'done'; id: number; blob: Blob; width: number; height: number; mime: string; alpha: boolean; ms: number }

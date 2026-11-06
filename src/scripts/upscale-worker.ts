@@ -1,7 +1,8 @@
 /// <reference lib="webworker" />
-// Inference worker (docs/inference.md): optionally removes the background (mask from the cutout model), runs the
-// upscaling network tile by tile, blends the tiles into the output, sets the alpha channel, writes the result file.
-// The page stays responsive; all pixels stay in this browser.
+// Inference worker (docs/inference.md): optionally removes the background (mask from the cutout model), optionally
+// prepares a soft photo (deblurring network, shrinking to its real resolution), runs the upscaling network tile by tile,
+// blends the tiles into the output, sets the alpha channel, writes the result file. Also measures on opening a picture
+// how sharp it really is (sharpness.ts). The page stays responsive; all pixels stay in this browser.
 //
 // Backend: WebGPU when the browser offers an adapter (half floats when it has shader-f16), else the runtime's CPU
 // backend (WebAssembly, multi-threaded when the page is cross-origin isolated). If WebGPU fails while a session is
@@ -9,8 +10,10 @@
 // browser rejects one of the runtime's shaders (seen in Firefox: "ShaderModule with 'Pad' label is invalid" in the
 // cut-out model), only that model is moved to the CPU and the job continues (notice "cpu-fallback").
 import * as ort from 'onnxruntime-web/webgpu';
-import type { Backend, CutoutInput, ErrorCode, FromWorker, ModelRef, Precision, RunRequest, ToWorker } from './types';
+import type { Backend, CutoutInput, ErrorCode, FromWorker, ModelRef, Precision, RunRequest, Sharpness, TileSettings, ToWorker } from './types';
 import { blendBand, blendTileIntoBand, planTiles, ramp, reduceOutput, tileInput } from './tiling';
+import { halve } from './resample';
+import { ANALYZE_SIDE, classify, edgeStats } from './sharpness';
 import { encodeImage } from './image-io';
 import { loadModel, pruneModels } from './model-cache';
 import { refineCutout } from './matte';
@@ -32,7 +35,7 @@ let backend: Backend = 'wasm';
 let precision: Precision = 'fp32';
 let adapterName = '';
 /** one session per task, kept for the next picture as long as the model stays the same */
-type Role = 'upscale' | 'cutout' | 'select-encoder' | 'select-decoder';
+type Role = 'upscale' | 'cutout' | 'deblur' | 'select-encoder' | 'select-decoder';
 type Entry = { url: string; session: ort.InferenceSession; bytes: Uint8Array<ArrayBuffer>; ep: Backend };
 const sessions: Partial<Record<Role, Entry>> = {};
 const cancelled = new Set<number>();
@@ -59,16 +62,51 @@ let queue: Promise<void> = Promise.resolve();
 
 const cpuThreads = () => (scope.crossOriginIsolated ? Math.max(1, Math.min(navigator.hardwareConcurrency || 4, 16)) : 1);
 
+let gpuAdapter: GPUAdapter | null = null;
+let gpuDevice: GPUDevice | null = null;
+
+/**
+ * powerPreference picks the fast GPU of a laptop with two; Chrome on Windows ignores it (the system setting decides)
+ * and warns in the console every time – not asked there (Chromium only: has userAgentData)
+ */
+function requestAdapter() {
+    const ua = (navigator as unknown as { userAgentData?: { platform?: string } }).userAgentData;
+    return navigator.gpu?.requestAdapter(ua?.platform === 'Windows' ? {} : { powerPreference: 'high-performance' }) ?? null;
+}
+
+// what the runtime asks for when it creates the device itself (logged with 1.31.1 – check again after an update):
+// these features if the adapter has them, these limits at the adapter's maximum
+const DEVICE_FEATURES = ['timestamp-query', 'shader-f16', 'subgroups', 'subgroup-size-control'] as GPUFeatureName[];
+const DEVICE_LIMITS = ['maxBindGroups', 'maxStorageBuffersPerShaderStage', 'maxStorageBufferBindingSize', 'maxBufferSize',
+    'maxComputeWorkgroupStorageSize', 'maxComputeInvocationsPerWorkgroup', 'maxComputeWorkgroupSizeX',
+    'maxComputeWorkgroupSizeY', 'maxComputeWorkgroupSizeZ', 'maxComputeWorkgroupsPerDimension'];
+
+/**
+ * The GPU device for every WebGPU session, created here instead of by the runtime: it would request its own adapter
+ * with powerPreference 'high-performance' (the console warning above, on every session). A lost device (driver reset)
+ * is replaced on the next session – with a new adapter, an adapter gives only one device.
+ */
+async function device(): Promise<GPUDevice> {
+    if (gpuDevice) return gpuDevice;
+    const adapter = gpuAdapter ?? await requestAdapter();
+    gpuAdapter = null;
+    if (!adapter) throw new Error('no WebGPU adapter');
+    const limits = adapter.limits as unknown as Record<string, number>;
+    const d = await adapter.requestDevice({
+        requiredFeatures: DEVICE_FEATURES.filter(f => adapter.features.has(f)),
+        requiredLimits: Object.fromEntries(DEVICE_LIMITS.map(k => [k, limits[k]])),
+    });
+    d.lost.then(info => { log('GPU device lost', info.reason, info.message); if (gpuDevice === d) gpuDevice = null; });
+    return (gpuDevice = d);
+}
+
 async function init(ortBase: string, forceCpu: boolean, forceFp32: boolean) {
     ort.env.wasm.wasmPaths = ortBase;
     // runtime log only with ?ortlog=verbose – its warnings (e.g. one line per removed constant) drown everything else
     ort.env.logLevel = verbose ? 'verbose' : 'error';
     try {
-        // powerPreference picks the fast GPU of a laptop with two; Chrome on Windows ignores it (the system setting
-        // decides) and warns in the console every time – not asked there (Chromium only: has userAgentData)
-        const ua = (navigator as unknown as { userAgentData?: { platform?: string } }).userAgentData;
-        const options: GPURequestAdapterOptions = ua?.platform === 'Windows' ? {} : { powerPreference: 'high-performance' };
-        const adapter = forceCpu ? null : await navigator.gpu?.requestAdapter(options);
+        const adapter = forceCpu ? null : await requestAdapter();
+        gpuAdapter = adapter;
         if (adapter) {
             backend = 'webgpu';
             precision = adapter.features.has('shader-f16') && !forceFp32 ? 'fp16' : 'fp32';
@@ -114,7 +152,7 @@ const isShaderError = (e: unknown) => /ShaderModule|compute pipeline|shader modu
 async function createSession(bytes: Uint8Array<ArrayBuffer>, cpuOnly = false): Promise<{ session: ort.InferenceSession; ep: Backend }> {
     if (backend === 'webgpu' && !cpuOnly) {
         try {
-            const session = await ort.InferenceSession.create(bytes, { executionProviders: ['webgpu'], graphOptimizationLevel: 'all', logSeverityLevel: verbose ? 0 : 3, logVerbosityLevel: verbose ? 1 : 0 });
+            const session = await ort.InferenceSession.create(bytes, { executionProviders: [{ name: 'webgpu', device: await device() }], graphOptimizationLevel: 'all', logSeverityLevel: verbose ? 0 : 3, logVerbosityLevel: verbose ? 1 : 0 });
             return { session, ep: 'webgpu' };
         } catch (e) {
             console.warn('WebGPU session failed, switching to the CPU backend:', e);
@@ -134,7 +172,7 @@ async function toCpu(role: Role, req: RunRequest, cause: unknown) {
     console.warn(`${role} model fails on WebGPU, running it on the CPU:`, cause);
     await entry.session.release();
     Object.assign(entry, await createSession(entry.bytes, true));
-    post({ type: 'notice', id: req.id, code: 'cpu-fallback', role: role.startsWith('select') ? 'select' : (role as 'upscale' | 'cutout') });
+    post({ type: 'notice', id: req.id, code: 'cpu-fallback', role: role.startsWith('select') ? 'select' : (role as 'upscale' | 'cutout' | 'deblur') });
 }
 
 async function useModel(role: Role, ref: ModelRef, req: RunRequest): Promise<Entry> {
@@ -163,68 +201,88 @@ async function useModel(role: Role, ref: ModelRef, req: RunRequest): Promise<Ent
     return entry;
 }
 
-/** run all tiles into `out` (RGBA, alpha already set); throws on GPU errors so the caller can retry smaller */
-async function runTiles(req: RunRequest, session: ort.InferenceSession, rgba: Uint8ClampedArray, w: number, h: number, out: Uint8ClampedArray, tile: number) {
-    const s = req.factor;
-    const modelScale = req.upscale!.scale;
+/** one tiled network pass: the model's own scale, output pixels per source pixel, tile settings */
+interface TileJob {
+    role: 'upscale' | 'deblur';
+    modelScale: number;
+    factor: number;
+    tiles: TileSettings & { multiple?: number };
+}
+
+/**
+ * All tiles of `rgba` (w × h) into `out` (RGBA outW × outH, alpha already set; may be smaller than w·factor × h·factor –
+ * the rest is cut off); throws on GPU errors so the caller can retry smaller.
+ */
+async function runTiles(req: RunRequest, job: TileJob, session: ort.InferenceSession, rgba: Uint8ClampedArray, w: number, h: number,
+    out: Uint8ClampedArray, outW: number, outH: number, tile: number) {
+    const { role, modelScale, factor: s, tiles } = job;
     const ratio = modelScale / s;
-    const pad = req.tile.pad;
-    const plan = planTiles(w + 2 * pad, h + 2 * pad, tile, req.tile.overlap);
+    const pad = tiles.pad;
+    const plan = planTiles(w + 2 * pad, h + 2 * pad, tile, tiles.overlap, tiles.multiple);
     const { tw, th, xs, ys } = plan;
     const total = xs.length * ys.length;
-    const outW = w * s, outH = h * s;
+    const step = role === 'deblur' ? 'sharpen' : 'upscale';
     // one row of tiles is blended side by side into this band, then the band into the output (tiling.ts)
     const band = new Uint8ClampedArray(outW * th * s * 3);
     let done = 0;
     const started = performance.now();
-    post({ type: 'progress', id: req.id, progress: { phase: 'tiles', done, total, tileSize: tile } });
+    post({ type: 'progress', id: req.id, progress: { phase: 'tiles', done, total, tileSize: tile, step } });
     for (let r = 0; r < ys.length; r++) {
         for (let c = 0; c < xs.length; c++) {
             if (cancelled.has(req.id)) throw new RunError('cancelled');
             const wx = ramp(xs, c, tw, s);
             const input = new ort.Tensor('float32', tileInput(rgba, w, h, pad, xs[c], ys[r], tw, th), [1, 3, th, tw]);
             const t0 = debug ? performance.now() : 0;
-            if (failGpu === 'upscale' && sessions.upscale?.ep === 'webgpu') throw new Error("simulated: ShaderModule with 'Pad' label is invalid");
+            if (failGpu === role && sessions[role]?.ep === 'webgpu') throw new Error("simulated: ShaderModule with 'Pad' label is invalid");
             const result = await session.run({ input });
             input.dispose();
-            if (debug) log(`tile ${done + 1}/${total}: ${Math.round(performance.now() - t0)} ms`);
+            if (debug) log(`${role} tile ${done + 1}/${total}: ${Math.round(performance.now() - t0)} ms`);
             const y = result.output;
             const reduced = reduceOutput(y.data as Float32Array, tw * modelScale, th * modelScale, ratio);
             y.dispose();
             blendTileIntoBand(band, outW, reduced.rgb, reduced.w, reduced.h, xs[c] * s, pad * s, wx);
             done++;
-            post({ type: 'progress', id: req.id, progress: { phase: 'tiles', done, total, tileSize: tile } });
+            post({ type: 'progress', id: req.id, progress: { phase: 'tiles', done, total, tileSize: tile, step } });
         }
         blendBand(out, outW, outH, band, th * s, ys[r] * s, pad * s, ramp(ys, r, th, s));
     }
-    log(`${total} tiles of ${tw}×${th} in ${Math.round(performance.now() - started)} ms (${sessions.upscale?.ep}, ${precision})`);
+    log(`${role}: ${total} tiles of ${tw}×${th} in ${Math.round(performance.now() - started)} ms (${sessions[role]?.ep}, ${precision})`);
 }
 
-/** upscaling with smaller tiles when the GPU runs out of memory */
-async function upscale(req: RunRequest, rgba: Uint8ClampedArray, w: number, h: number, out: Uint8ClampedArray) {
-    const entry = await useModel('upscale', req.upscale!, req);
-    let tile = req.tile.size;
+/** a tiled pass with smaller tiles when the GPU runs out of memory, on the CPU when it rejects a shader */
+async function tiled(req: RunRequest, job: TileJob, ref: ModelRef, rgba: Uint8ClampedArray, w: number, h: number,
+    out: Uint8ClampedArray, outW: number, outH: number) {
+    const entry = await useModel(job.role, ref, req);
+    const multiple = job.tiles.multiple ?? 1;
+    let tile = job.tiles.size;
     for (;;) {
         try {
-            await runTiles(req, entry.session, rgba, w, h, out, tile);
+            await runTiles(req, job, entry.session, rgba, w, h, out, outW, outH, tile);
             return;
         } catch (e) {
             if (e instanceof RunError) throw e;
             if (entry.ep === 'webgpu' && isShaderError(e)) {
-                await toCpu('upscale', req, e);
+                await toCpu(job.role, req, e);
                 continue;
             }
             // most likely the GPU ran out of memory: smaller tiles with a fresh session
-            if (entry.ep !== 'webgpu' || tile / 2 < req.tile.minSize) {
+            if (entry.ep !== 'webgpu' || tile / 2 < job.tiles.minSize || (tile / 2) % multiple) {
                 throw new RunError(entry.ep === 'webgpu' ? 'gpu-memory' : 'unknown', String(e));
             }
-            console.warn(`tile ${tile} failed, retrying with ${tile / 2}:`, e);
+            console.warn(`${job.role}: tile ${tile} failed, retrying with ${tile / 2}:`, e);
             tile /= 2;
             post({ type: 'notice', id: req.id, code: 'tile-reduced', tileSize: tile });
             await entry.session.release();
             Object.assign(entry, await createSession(entry.bytes));
         }
     }
+}
+
+/** the deblurring network over a picture (same size; alpha copied) */
+async function deblur(req: RunRequest, rgba: Uint8ClampedArray, w: number, h: number) {
+    const out = new Uint8ClampedArray(rgba);
+    await tiled(req, { role: 'deblur', modelScale: 1, factor: 1, tiles: req.sharpenTile }, req.sharpen!, rgba, w, h, out, w, h);
+    return out;
 }
 
 /**
@@ -377,9 +435,12 @@ async function run(req: RunRequest) {
     final = null;
     const w = bitmap.width, h = bitmap.height;
     const outW = w * factor, outH = h * factor;
+    // a soft photo is shrunk before upscaling: the upscaler then works on a smaller picture with a larger factor
+    const shrink = req.sharpen?.shrink ?? 1;
+    const upFactor = factor * shrink;
     try {
-        if (req.upscale && !Number.isInteger(req.upscale.scale / factor)) throw new RunError('unknown', `factor ${factor} does not divide the model scale ${req.upscale.scale}`);
-        if (!req.upscale && factor !== 1) throw new RunError('unknown', 'no upscaling model');
+        if (req.upscale && !Number.isInteger(req.upscale.scale / upFactor)) throw new RunError('unknown', `factor ${upFactor} does not divide the model scale ${req.upscale.scale}`);
+        if (!req.upscale && upFactor !== 1) throw new RunError('unknown', 'no upscaling model');
         const src = new OffscreenCanvas(w, h);
         const sctx = src.getContext('2d', { willReadFrequently: true })!;
         sctx.drawImage(bitmap, 0, 0);
@@ -390,15 +451,25 @@ async function run(req: RunRequest) {
 
         const mask = req.cutout ? await cutoutMask(req, bitmap) : null;
 
+        // soft photo: deblurring at full size ('thorough') or after shrinking ('fast', ¼ of the work)
+        let pic: Uint8ClampedArray = rgba, pw = w, ph = h;
+        if (req.sharpen) {
+            const { mode } = req.sharpen;
+            if (mode === 'thorough' || shrink === 1) pic = await deblur(req, pic, pw, ph);
+            if (shrink === 2) ({ rgba: pic, w: pw, h: ph } = halve(pic, pw, ph));
+            if (mode === 'fast' && shrink === 2) pic = await deblur(req, pic, pw, ph);
+        }
+
         let out: Uint8ClampedArray<ArrayBuffer>;
         try {
-            out = factor === 1 ? new Uint8ClampedArray(rgba) : new Uint8ClampedArray(outW * outH * 4);
+            out = upFactor === 1 ? new Uint8ClampedArray(pic) : new Uint8ClampedArray(outW * outH * 4);
         } catch {
             throw new RunError('too-large', `no memory for ${outW}×${outH}`);
         }
-        if (factor !== 1) {
+        if (upFactor !== 1) {
             for (let i = 3; i < out.length; i += 4) out[i] = 255;
-            await upscale(req, rgba, w, h, out);
+            // the shrunk picture rounds up (halve) – the output takes exactly w·factor × h·factor of it
+            await tiled(req, { role: 'upscale', modelScale: req.upscale!.scale, factor: upFactor, tiles: req.tile }, req.upscale!, pic, pw, ph, out, outW, outH);
             if (sourceAlpha) {
                 post({ type: 'progress', id: req.id, progress: { phase: 'alpha' } });
                 scaleIntoAlpha(bitmap, w, h, 3, out, outW, outH, false);
@@ -585,6 +656,31 @@ async function regrain(msg: Extract<ToWorker, { type: 'grain' }>) {
     }
 }
 
+/** how sharp a picture really is: centre crop (at most ANALYZE_SIDE²) at full and half size (sharpness.ts) */
+async function analyze(msg: Extract<ToWorker, { type: 'analyze' }>) {
+    const { bitmap } = msg;
+    let sharpness: Sharpness = { soft: false, width: NaN, halfWidth: NaN, edges: 0 };
+    try {
+        const t0 = performance.now();
+        const cw = Math.min(bitmap.width, ANALYZE_SIDE), ch = Math.min(bitmap.height, ANALYZE_SIDE);
+        const canvas = new OffscreenCanvas(cw, ch);
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+        ctx.fillStyle = '#fff';   // transparent areas as white – no edges from undefined colours
+        ctx.fillRect(0, 0, cw, ch);
+        ctx.drawImage(bitmap, (bitmap.width - cw) >> 1, (bitmap.height - ch) >> 1, cw, ch, 0, 0, cw, ch);
+        const px = ctx.getImageData(0, 0, cw, ch).data;
+        canvas.width = canvas.height = 0;
+        const half = halve(px, cw, ch);
+        sharpness = classify(edgeStats(px, cw, ch), edgeStats(half.rgba, half.w, half.h));
+        log(`sharpness: edges ${sharpness.width.toFixed(2)} px, at half size ${sharpness.halfWidth.toFixed(2)} px (${sharpness.edges} edges) → ${sharpness.soft ? 'soft' : 'sharp'}, ${Math.round(performance.now() - t0)} ms`);
+    } catch (e) {
+        console.warn('sharpness analysis failed:', e);
+    } finally {
+        bitmap.close();
+    }
+    post({ type: 'analysis', id: msg.id, sharpness });
+}
+
 scope.onmessage = (ev: MessageEvent<ToWorker>) => {
     const msg = ev.data;
     if (msg.type === 'init') {
@@ -592,6 +688,8 @@ scope.onmessage = (ev: MessageEvent<ToWorker>) => {
         verbose = msg.verbose;
         failGpu = msg.failGpu;
         queue = queue.then(() => init(msg.ortBase, msg.forceCpu, msg.forceFp32));
+    } else if (msg.type === 'analyze') {
+        queue = queue.then(() => analyze(msg));
     } else if (msg.type === 'run') {
         queue = queue.then(() => run(msg));
     } else if (msg.type === 'cancel') {

@@ -60,7 +60,18 @@
         "remove": "Remove",
         "needCutout": "At 1× there is only something to do when the background is removed.",
         "startCutout": "Remove background",
-        "againCutout": "Remove background again"
+        "againCutout": "Remove background again",
+        "sharpen": "Sharpen",
+        "sharpenHint": "For soft photos (e.g. from a phone): removes blur and works at the real resolution before upscaling – only when the photo is soft. Fast: after shrinking; Thorough: at full size (slower, more natural).",
+        "sharpenOff": "Off",
+        "sharpenFast": "Fast",
+        "sharpenThorough": "Thorough",
+        "soft": "looks soft",
+        "sharpenChecking": "Checking sharpness …",
+        "sharpenSoft": "Soft photo – sharpened first",
+        "sharpenSharp": "Photo is sharp – no sharpening needed",
+        "startSharpen": "Sharpen",
+        "againSharpen": "Sharpen again"
     },
     "progress": {
         "download": "Loading model … {loaded} / {total}",
@@ -70,7 +81,8 @@
         "alpha": "Transferring transparency …",
         "encode": "Writing file …",
         "cutout": "Detecting the background …",
-        "refine": "Refining the edges …"
+        "refine": "Refining the edges …",
+        "sharpenTiles": "Sharpening: tile {done} / {total}"
     },
     "view": {
         "before": "Before",
@@ -139,7 +151,22 @@
             "title": "Partly running on the processor",
             "cutout": "This browser cannot run the background removal model on the graphics card – it runs on the processor instead (a bit slower).",
             "upscale": "This browser cannot run the model on the graphics card – it runs on the processor instead (much slower).",
-            "select": "This browser cannot run the click selection on the graphics card – it runs on the processor instead (slower)."
+            "select": "This browser cannot run the click selection on the graphics card – it runs on the processor instead (slower).",
+            "deblur": "This browser cannot run the sharpening model on the graphics card – it runs on the processor instead (much slower)."
+        },
+        "soft": {
+            "title": "Soft photo detected",
+            "message": "This photo holds less detail than its pixel count suggests – typical for phone photos. Sharpening removes blur and works at the real resolution; the result gets much clearer.",
+            "download": "This loads a model once ({size}).",
+            "fast": "Sharpen (fast)",
+            "thorough": "Sharpen (thorough)",
+            "no": "No, thanks"
+        },
+        "sharpenConsent": {
+            "title": "Load the sharpening model?",
+            "message": "Sharpening loads a model once ({size}) and keeps it in the browser. It comes from this site – your pictures never leave your computer.",
+            "load": "Load",
+            "cancel": "Cancel"
         }
     },
     "languages": {
@@ -169,7 +196,8 @@
             "tailwind": "Styling",
             "typescript": "Programming language",
             "birefnet": "Background removal: detects and removes the background (ready-made ONNX export)",
-            "sam": "Click selection: detects the object under the pointer (ready-made ONNX export)"
+            "sam": "Click selection: detects the object under the pointer (ready-made ONNX export)",
+            "nafnet": "Sharpening: removes blur from soft photos (weights converted to ONNX)"
         }
     },
     "edit": {

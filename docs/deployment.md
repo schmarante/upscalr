@@ -32,6 +32,8 @@ Projekt `upscalr`, Docroot `dist` → https://upscalr.dev.dasachtegebot.local/ l
 
 Bei Push auf `master` (und von Hand): `npm ci` → `npm test` → Checkpoints aus `actions/cache` (Schlüssel = Hash von `models.json`) → `npm run models` → `npm run build` mit `BASE_PATH`/`SITE_URL` aus `configure-pages` (Repo-Variable `SITE_URL` hat Vorrang) → `dist/` veröffentlichen. In den Pages-Einstellungen muss die Quelle „GitHub Actions“ sein (umgestellt am 05.11.2026, vorher „Deploy from a branch“). Ziel: GitHub Pages dieses Repos (`https://<konto>.github.io/upscalr/`).
 
+**Größe:** GitHub Pages veröffentlicht höchstens 1 GB. `dist/` hatte 655 MB; das Modell zum Schärfen kommt deshalb nur als fp16 (129 MB statt zusätzlich 259 MB fp32, `precisions` in `models.json`) → rund 790 MB. Vor jedem neuen großen Modell nachrechnen. Sein Checkpoint (271 MB) kommt von Google Drive (offizielle Quelle; einmal pro Änderung an `models.json`, danach aus dem Actions-Cache) – scheitert der Download dort, Quelle tauschen (Prüfsumme bleibt gleich).
+
 Fallstrick: Die Umgebung `github-pages` kann Deploys auf bestimmte Branches beschränken. Erster Lauf (05.11.2026): Build ok, Deploy abgelehnt – „Branch "master" is not allowed to deploy to github-pages due to environment protection rules“. Abhilfe: Settings → Environments → `github-pages` → Deployment branches: `master` erlauben.
 
 ## Cross-Origin-Isolation
@@ -48,7 +50,7 @@ Nötig für `SharedArrayBuffer` = mehrere Threads im CPU-Backend (WebGPU braucht
 
 ## Caching (`.htaccess`)
 
-`/_astro/` und `/ort/` und `/models/*.onnx` immutable (Hash bzw. Version im Namen), `models/manifest.json` `no-cache`. Kompression für Text und wasm; Modelle nicht (Float-Gewichte schrumpfen kaum, kostet nur Server-CPU). Im Browser zusätzlich der Modell-Cache (Cache API, `docs/models.md`).
+`/_astro/` und `/ort/` und `/models/*.onnx` immutable (Hash bzw. Version im Namen), `models/manifest.json`, die Seite (`/`, `*.html`) und die Skripte ohne Hash (`coi-serviceworker.js`, `coi-config.js`) `no-cache` (nachfragen, 304 wenn unverändert). Fallstrick (06.11.2026): ohne Regel für die Seite nahm Chrome sie nach eigener Schätzung aus dem Cache (Last-Modified-Heuristik) – nach einem Build noch der alte Stand, der auf gelöschte `_astro`-Bündel verweist. GitHub Pages schickt für HTML selbst `max-age=600` (bis zu 10 min alter Stand möglich, nicht steuerbar). Kompression für Text und wasm; Modelle nicht (Float-Gewichte schrumpfen kaum, kostet nur Server-CPU). Im Browser zusätzlich der Modell-Cache (Cache API, `docs/models.md`).
 
 ## Testen (Nov. 2026)
 

@@ -60,7 +60,18 @@
         "remove": "Entfernen",
         "needCutout": "Bei 1× gibt es nur etwas zu tun, wenn der Hintergrund entfernt wird.",
         "startCutout": "Freistellen",
-        "againCutout": "Erneut freistellen"
+        "againCutout": "Erneut freistellen",
+        "sharpen": "Schärfen",
+        "sharpenHint": "Für weiche Fotos (z. B. vom Handy): vor dem Hochskalieren Unschärfe entfernen und mit der echten Auflösung rechnen – nur wenn das Foto weich ist. Schnell: nach dem Verkleinern; Gründlich: in voller Größe (langsamer, natürlicher).",
+        "sharpenOff": "Aus",
+        "sharpenFast": "Schnell",
+        "sharpenThorough": "Gründlich",
+        "soft": "wirkt weich",
+        "sharpenChecking": "Schärfe wird geprüft …",
+        "sharpenSoft": "Weiches Foto – wird vorab geschärft",
+        "sharpenSharp": "Foto ist scharf – Schärfen nicht nötig",
+        "startSharpen": "Schärfen",
+        "againSharpen": "Erneut schärfen"
     },
     "progress": {
         "download": "Modell wird geladen … {loaded} / {total}",
@@ -70,7 +81,8 @@
         "alpha": "Transparenz wird übertragen …",
         "encode": "Datei wird geschrieben …",
         "cutout": "Hintergrund wird erkannt …",
-        "refine": "Kanten werden verfeinert …"
+        "refine": "Kanten werden verfeinert …",
+        "sharpenTiles": "Schärfen: Kachel {done} / {total}"
     },
     "view": {
         "before": "Vorher",
@@ -139,7 +151,22 @@
             "title": "Läuft teilweise auf dem Prozessor",
             "cutout": "Dieser Browser kann das Freistell-Modell nicht auf der Grafikkarte ausführen – es läuft deshalb auf dem Prozessor (etwas langsamer).",
             "upscale": "Dieser Browser kann das Modell nicht auf der Grafikkarte ausführen – es läuft deshalb auf dem Prozessor (deutlich langsamer).",
-            "select": "Dieser Browser kann die Klick-Auswahl nicht auf der Grafikkarte ausführen – sie läuft deshalb auf dem Prozessor (langsamer)."
+            "select": "Dieser Browser kann die Klick-Auswahl nicht auf der Grafikkarte ausführen – sie läuft deshalb auf dem Prozessor (langsamer).",
+            "deblur": "Dieser Browser kann das Modell zum Schärfen nicht auf der Grafikkarte ausführen – es läuft deshalb auf dem Prozessor (deutlich langsamer)."
+        },
+        "soft": {
+            "title": "Weiches Foto erkannt",
+            "message": "Das Foto enthält weniger Details, als seine Pixelzahl vermuten lässt – typisch für Handyfotos. Schärfen entfernt Unschärfe und rechnet mit der echten Auflösung; das Ergebnis wird deutlich klarer.",
+            "download": "Dafür wird einmalig ein Modell geladen ({size}).",
+            "fast": "Schnell schärfen",
+            "thorough": "Gründlich schärfen",
+            "no": "Nein, danke"
+        },
+        "sharpenConsent": {
+            "title": "Modell zum Schärfen laden?",
+            "message": "Zum Schärfen wird einmalig ein Modell geladen ({size}) und im Browser gespeichert. Es kommt von dieser Seite – deine Bilder verlassen den Rechner nicht.",
+            "load": "Laden",
+            "cancel": "Abbrechen"
         }
     },
     "languages": {
@@ -169,7 +196,8 @@
             "tailwind": "Gestaltung",
             "typescript": "Programmiersprache",
             "birefnet": "Freistellen: Hintergrund erkennen und entfernen (fertiger ONNX-Export)",
-            "sam": "Klick-Auswahl: Objekt unter dem Mauszeiger erkennen (fertiger ONNX-Export)"
+            "sam": "Klick-Auswahl: Objekt unter dem Mauszeiger erkennen (fertiger ONNX-Export)",
+            "nafnet": "Schärfen: Unschärfe aus weichen Fotos entfernen (Gewichte nach ONNX umgewandelt)"
         }
     },
     "edit": {

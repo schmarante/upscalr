@@ -1,6 +1,6 @@
 // Page side of the inference worker (docs/inference.md): starts it, knows the backend, sends jobs, hands progress and
 // results back as promises. One job at a time (the worker queues anyway); a job can be cancelled between two tiles.
-import type { Backend, CutoutInput, EditMaps, ErrorCode, FromWorker, Manifest, ModelRef, Precision, Progress, RunRequest, ToWorker } from './types';
+import type { Backend, CutoutInput, EditMaps, ErrorCode, FromWorker, Manifest, ModelRef, Precision, Progress, RunRequest, Sharpness, ToWorker } from './types';
 import { DEBUG } from './log';
 
 export interface BackendInfo { backend: Backend; precision: Precision; adapter: string }
@@ -91,6 +91,18 @@ export class Upscaler {
                     else if (msg.type === 'error') { this.jobs.delete(id); reject(new UpscaleError(msg.code, msg.message)); }
                 },
             });
+        });
+    }
+
+    /** how sharp a picture really is (sharpness.ts); the bitmap is handed over to the worker */
+    analyze(bitmap: ImageBitmap) {
+        const id = this.nextId++;
+        return new Promise<Sharpness>((resolve, reject) => {
+            this.jobs.set(id, {
+                fail: reject,
+                handle: msg => { if (msg.type === 'analysis') { this.jobs.delete(id); resolve(msg.sharpness); } },
+            });
+            this.send({ type: 'analyze', id, bitmap }, [bitmap]);
         });
     }
 

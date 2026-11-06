@@ -31,6 +31,10 @@ export class CompareView {
     /** counts results: a late decode of an older one must not show the background */
     private afterToken = 0;
     private divider: HTMLElement;
+    /** "a new result is being computed": the softened picture right of the divider instead of the old result */
+    private working: HTMLElement;
+    private workingImg: HTMLImageElement;
+    private isWorking = false;
     private lw = 0;
     private lh = 0;
     private z = 1;
@@ -58,6 +62,8 @@ export class CompareView {
         this.after = stage.querySelector('[data-after]')!;
         this.afterBg = stage.querySelector('[data-after-bg]')!;
         this.divider = stage.querySelector('[data-divider]')!;
+        this.working = stage.querySelector('[data-working]')!;
+        this.workingImg = stage.querySelector('[data-working-img]')!;
         this.bind();
         new ResizeObserver(() => (this.fitted ? this.fit() : this.update())).observe(stage);
     }
@@ -65,6 +71,8 @@ export class CompareView {
     /** show a picture (before) at the given logical size; clears the result */
     setBefore(url: string, lw: number, lh: number) {
         this.before.src = url;
+        this.workingImg.src = url;
+        this.isWorking = false;
         this.after.removeAttribute('src');
         this.hasAfter = false;
         this.showBg(false);
@@ -102,6 +110,16 @@ export class CompareView {
         this.after.decode().catch(() => {}).then(() => requestAnimationFrame(() => {
             if (token === this.afterToken && this.after.dataset.transparent) this.showBg(true);
         }));
+    }
+
+    /**
+     * A new result is being computed (on) – right of the divider the picture softened with a moving light band instead
+     * of the old result (which may be outdated or, after a cut-out that found nothing, empty). Off: the result again –
+     * the new one, or the old one after cancelling.
+     */
+    setWorking(on: boolean) {
+        this.isWorking = on;
+        this.update();
     }
 
     private showBg(on: boolean) {
@@ -199,13 +217,17 @@ export class CompareView {
         const sharp = z * devicePixelRatio >= 3;
         canvas.classList.toggle('[image-rendering:pixelated]', sharp);
         this.dx = Math.min(this.lw, Math.max(0, this.dx));
-        this.after.style.clipPath = this.afterBg.style.clipPath = `inset(0 0 0 ${this.dx}px)`;
+        this.after.style.clipPath = this.afterBg.style.clipPath = this.working.style.clipPath = `inset(0 0 0 ${this.dx}px)`;
         this.afterBg.style.setProperty('--checker', `${12 / z}px`);   // checkerboard squares stay 12 screen px
-        this.after.hidden = !this.hasAfter || !!this.editCanvas;   // an empty <img> would still draw a hairline
+        this.working.style.setProperty('--soft-blur', `${4 / z}px`);   // blur of a few screen px at any zoom
+        this.working.style.setProperty('--sheen', `${Math.ceil(Math.hypot(this.lw, this.lh))}px`);   // gloss edge spans the diagonal
+        const split = (this.hasAfter || this.isWorking) && !this.editCanvas;
+        this.after.hidden = !this.hasAfter || !!this.editCanvas || this.isWorking;   // an empty <img> would still draw a hairline
         this.afterBg.hidden = this.after.hidden;
-        this.divider.hidden = !this.hasAfter || !!this.editCanvas;
+        this.working.hidden = !this.isWorking || !!this.editCanvas;
+        this.divider.hidden = !split;
         if (this.editCanvas) canvas.classList.toggle('[image-rendering:pixelated]', sharp);
-        if (this.hasAfter) {
+        if (split) {
             const x = this.tx + this.dx * z;
             this.divider.style.transform = `translateX(${x}px)`;
             // handle and labels in the visible part of the picture (not behind the panel, not off screen)

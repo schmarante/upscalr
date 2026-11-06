@@ -89,3 +89,14 @@ test('blending leaves no hard seams', () => {
     }
     assert.ok(worst <= 2, `largest step between neighbours: ${worst}`);
 });
+
+test('planTiles: tile sides as multiples (deblurring net) – small pictures get a rounded-up tile', () => {
+    const small = planTiles(100, 70, 384, 64, 16);
+    assert.equal(small.tw, 112);
+    assert.equal(small.th, 80);
+    assert.deepEqual(small.xs, [0]);
+    const large = planTiles(1000, 500, 384, 64, 16);
+    assert.equal(large.tw, 384);
+    assert.equal(large.th, 384);
+    assert.equal(large.xs.at(-1), 1000 - 384);
+});

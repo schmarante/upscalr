@@ -11,15 +11,18 @@ KI-Modelle, eigener Konverter (Checkpoint → ONNX), fertige ONNX-Modelle samt U
 | `photo-quality` | Foto, hohe Qualität | rrdb (23 Blöcke) | 16,70 M | 63,8 MB | 32,0 MB |
 | `drawing` | Zeichnung / Anime / Lineart | rrdb (6 Blöcke) | 4,47 M | 17,1 MB | 8,6 MB |
 | `select-encoder` / `select-decoder` | Klick-Auswahl (Auswahl bearbeiten) | fertiges ONNX in zwei Teilen (Bild-Encoder; Punkt → 3 Masken-Kandidaten 256² + Qualitätswerte) | – | 128,2 + 20,2 MB | 64,2 + 10,2 MB |
+| `deblur` | Schärfen weicher Fotos (Unschärfe + JPEG-Artefakte entfernen, gleiche Größe) | nafnet (U-Netz, 36 NAF-Blöcke, Breite 64) | 67,89 M | – (nicht ausgeliefert) | 129 MB |
 | `cutout` | Freistellen (Hintergrund entfernen) | fertiges ONNX (Swin-T-Encoder + Decoder mit deformierbaren Faltungen), umgeschrieben | – | 172,8 MB | 88,6 MB |
 
-Hochskalierer alle ×4. Herkunft und Lizenzen (BSD-3-Clause bzw. MIT) siehe `docs/licenses.md`. In der Oberfläche heißen die Modelle nur nach Inhalt/Qualität – nie nach dem Upstream-Namen.
+Hochskalierer alle ×4; `deblur` ×1, nur fp16 (Größe der Seite, `docs/deployment.md`). Herkunft und Lizenzen (BSD-3-Clause bzw. MIT) siehe `docs/licenses.md`. In der Oberfläche heißen die Modelle nur nach Inhalt/Qualität – nie nach dem Upstream-Namen.
 
 ## Einzige Quelle: `scripts/models.json`
 
 Je Modell: `id` (Dateiname), `task` (`upscale` | `cutout`), `arch` (`compact` | `rrdb` | `onnx`), `scale`, `source` (Download-URL des Checkpoints), `sha256` (Pflicht – ohne Prüfsumme warnt der Konverter und nennt den Wert), `weights` (Eintrag im Checkpoint, der den State-Dict enthält: `params` oder `params_ema`), `license`.
 
 Welches Modell zu welcher Auswahl gehört: `CONTENT` und `CUTOUT` in `src/scripts/config.ts`.
+
+`file` (optional): Name im Cache, wenn die URL keinen hat (Google-Drive-Link). `precisions` (optional, Checkpoint-Modelle): nur diese Varianten schreiben, Standard `["fp32", "fp16"]` – `deblur` nur `["fp16"]` (läuft auch auf der CPU: die Runtime rechnet dort intern in fp32; die App nimmt dann die fp16-Datei, `fileOf()` in app.ts).
 
 `blend` (nur Checkpoint-Modelle): `{ source, sha256, weights, amount }` – ein zweiter Checkpoint **desselben Netzes**; der Konverter mischt die Gewichte Tensor für Tensor: `(1 − amount)·A + amount·B` (`blendWeights()`; gleiche Namen und Formen Pflicht, sonst Abbruch). So regeln die Autoren beim schnellen Foto-Modell die Entrausch-Stärke: der zweite Checkpoint (`realesr-general-wdn-x4v3`, gleiches Release v0.2.5.0, BSD-3) entrauscht nur schwach. Deren Regler „denoise strength“ d entspricht `amount = 1 − d`; ihr Standard ist d = 0,5. Stufen (Nutzer-Wunsch 05.11.2026, Personen wirkten zu glatt): **Stark** = nur Hauptmodell (d = 1, bis dahin der einzige Stand), **Mittel** = `amount` 0,5 (Standard), **Schwach** = `amount` 1 (nur der zweite Checkpoint). Je Stufe ein eigenes Modell im Manifest (Umschalten = anderes Modell, kein Mischen im Browser); Metadaten im ONNX: `blend`, `blendAmount`. Für das Qualitätsmodell gibt es keinen solchen Partner – dort hilft nur die Körnung (`docs/inference.md`).
 
@@ -80,6 +83,25 @@ Verworfen: das Modell mit PyTorch selbst neu exportieren (hätte den Modell-Code
 - `pruneModels(keepUrls)`: nach jedem Laden – alles, was nicht im aktuellen Manifest steht, fliegt raus.
 - `cachedModels()`: das Panel zeigt „Modell bereit (offline)“ statt der Download-Größe.
 - Läuft im Worker (Cache API gibt es dort auch).
+
+## Schärfen: NAFNet (`deblur`, eingebaut 06.11.2026)
+
+Anlass (Nutzer, 06.11.2026): Handyfotos bringen beim Hochskalieren wenig – das Handy hat schon geglättet/digital gezoomt, dazu Bewegungsunschärfe und Dunst. Testbild `tests/Image (3).jfif` (1448×2573, Detail nur für etwa die halbe Kantenlänge). Einsatz in der App: `docs/inference.md` „Weiche Fotos“, Oberfläche/Zustimmung: `docs/ui.md`.
+
+**Erst verkleinern, dann hochskalieren** (ohne neues Modell): auf 50 % (Flächenmittel), dann 4× – gegenüber direkt 2× bei gleicher Endgröße klar schärfer (Fenster, Treppe, Umrisse), mit dem Qualitätsmodell weniger Schlieren, schneller (schnell 2,8 statt 5,2 s, Qualität 10,9 statt 31,6 s, WebGPU). Grund: Das Modell kennt 1–2 px breite Kanten; 4–6 px breite hält es für gewollt.
+
+**Builder `nafnet`** in `nets.mjs` (eigene Umsetzung der veröffentlichten Struktur, Checkpoints laden mit `pth-reader`, Eintrag `params`): U-Netz, 4 Stufen, NAF-Blöcke (Kanal-LayerNorm → 1×1 → depthwise 3×3 → „Gate“ (Hälfte × Hälfte) → Kanal-Attention (globaler Mittelwert → 1×1 → ×) → 1×1 · beta; zweite Hälfte mit gamma). Beim Umwandeln eingerechnet: LayerNorm-Skalierung/-Verschiebung in die folgende 1×1-Faltung, beta/gamma in die Faltung davor, das Gate als zwei halbe Faltungen (kein Split-Knoten). Höhe/Breite: Vielfache von 16. Struktur geprüft: alle Gewichte zugeordnet; künstlich verwischtes Foto (9 px waagerecht) sichtbar zurückgeholt.
+- **fp16-Fallstricke** (auf der CPU unsichtbar – die Runtime rechnet dort intern in fp32; auf WebGPU kam nur NaN): (1) In der LayerNorm erreichen die quadrierten Abweichungen bis 2·10⁷, die Varianz 4,7·10⁴ (fp16 endet bei 65 504) → LayerNorm immer in fp32 (Cast davor/danach). (2) Der globale Mittelwert der Attention summiert über die ganze Kachel → ebenfalls fp32. Danach fp16 auf WebGPU gegen fp32 auf der CPU: 43,6 dB (max. 7/255, wie fp32 auf der GPU). Gate und Attention-Produkt bleiben klein (≤ 440).
+- Gekachelt mit 384er-Kacheln, 64 px Überlappung (der globale Mittelwert je Kachel entspricht der lokalen Variante, die die Autoren für große Bilder vorsehen).
+
+Ergebnisse am Handyfoto (Endgröße 2×, schnelles Modell): **REDS-width64** (Entwischen + JPEG-Artefakte) vor dem Verkleinern = bestes Ergebnis – Bewegungsschlieren an Leitwerk/Winglet weg, Fenster und Treppe scharf, Flächen sauber. REDS erst *nach* dem Verkleinern: noch schärfer, wirkt etwas gemalter, ¼ der Rechenzeit. **GoPro-width32** (nur Bewegungsunschärfe): kaum besser als nur verkleinern, bringt Körnchen in glatte Flächen – verworfen.
+
+| Modell | Parameter | fp16 | WebGPU fp16 je 384er-Kachel (Test-GPU) | CPU (Node, 8 Threads), Handyfoto 3,7 MP |
+|---|---|---|---|---|
+| REDS-width64 | 67,9 M | 136 MB | 90 ms | 29,5 s (½ Größe: 9,2 s) |
+| GoPro-width32 | 17,1 M | 34 MB | 42 ms | 9,5 s |
+
+Quelle: offizielle Gewichte nur auf Google Drive – `drive.usercontent.google.com/download?id=…&export=download&confirm=t` liefert die Datei direkt (in `models.json`, Cache-Name `NAFNet-REDS-width64.pth`, SHA-256 `175fe8b3…2df3`; GoPro-w32 zum Vergleich `19394e61…1a5c`). Lizenz: `docs/licenses.md`. Testskripte der Voruntersuchung lokal in `.cache/nafnet/` (nicht im Repo).
 
 ## Neues Modell aufnehmen
 

@@ -19,6 +19,7 @@ Keine Lizenzverletzungen, keine Nennung Dritter ohne Freigabe, basiert komplett 
 | Zeichnung / Anime / Lineart | RealESRGAN_x4plus_anime_6B | BSD-3 |
 | Freistellen (Hintergrund entfernen) | BiRefNet_lite (fertiger ONNX-Export, umgeschrieben: DeformConv, schmale Knoten) | MIT (Trainingsdaten teils nur nicht-kommerziell, `docs/licenses.md`) |
 | Klick-Auswahl (Auswahl bearbeiten) | SAM 2.1 hiera-tiny (fertiger ONNX-Export, Gewichte eingebettet) | Apache 2.0 |
+| Schärfen weicher Fotos (Handy) | NAFNet-REDS-width64 (eigener Konverter, nur fp16) | MIT (Trainingsdaten REDS: CC BY 4.0) |
 | Gesichter (später) | GFPGAN | Apache 2.0 |
 
 ## MVP
@@ -36,6 +37,7 @@ Keine Lizenzverletzungen, keine Nennung Dritter ohne Freigabe, basiert komplett 
 - [X] Gegen „wachsige“ Personen (05.11.2026, Wunsch des Nutzers): Glättung Stark | Mittel | Schwach für das schnelle Foto-Modell (Gewichte gemischt, Standard Mittel) und Regler Körnung, der ohne neue Berechnung wirkt (`docs/models.md`, `docs/inference.md`)
 - [X] Kantenverfeinerung beim Freistellen: geführter Filter + Vordergrundfarbe (`matte.ts`, Testbild des Nutzers: Saum weg, Strähnen zurück)
 - [X] Freistellen: Hintergrund: Behalten | Entfernen, kombinierbar mit 2×/4×, Faktor 1× = nur freistellen (Wunsch des Nutzers, 05.11.2026); JPEG → PNG, Suffix `-cutout` bei 1×
+- [X] Weiche Fotos schärfen (06.11.2026, Wunsch des Nutzers): Erkennung beim Öffnen (Kantenbreite, `sharpness.ts`), Vorschlag – Modell-Download (129 MB) nur nach Zustimmung –, Option Schärfen Aus | Schnell | Gründlich; Unschärfe entfernen + auf die echte Auflösung verkleinern, dann hochskalieren; bei 1× Verbessern in Originalgröße (Suffix `-sharpen`) (`docs/inference.md` „Weiche Fotos“, `docs/ui.md`)
 
 ## Später
 - Freistellen: Kantenverfeinerung als WebGPU-Shader (heute 7,5 s bei 4096² im Worker); „Dunst“ zwischen Locken → echtes Matting-Modell prüfen (Lizenz/Trainingsdaten)
@@ -50,6 +52,7 @@ Keine Lizenzverletzungen, keine Nennung Dritter ohne Freigabe, basiert komplett 
 ## Grenzen
 - Große Bilder nur gekachelt (WebGPU-Speicher); zu wenig Grafikspeicher → Kacheln halbieren bis 64 px
 - Ausgabe höchstens 32 767 px Kante / 268 MP (Canvas-Grenzen, `LIMITS` in config.ts)
+- Veröffentlichte Seite höchstens 1 GB (GitHub Pages; heute ≈ 790 MB) – große Modelle nur als fp16 (`docs/deployment.md`)
 
 ## Offen
 - Privat oder kommerziell? (entscheidet Modellauswahl) – vorläufig PolyForm Noncommercial wie RINDR; Trainingsdaten-Frage in `docs/licenses.md`
@@ -74,14 +77,15 @@ Keine Lizenzverletzungen, keine Nennung Dritter ohne Freigabe, basiert komplett 
 
 | Datei | Inhalt |
 |---|---|
-| `docs/models.md` | Modelle und Konvertierung – `scripts/models.json`, Konverter (`convert-models.mjs`, `lib/pth-reader.mjs`, `lib/nets.mjs`, `lib/onnx-writer.mjs`), fertige ONNX + Umschreiben (`lib/onnx-rewrite.mjs`: DeformConv, schmale Concat/Split), fp32/fp16, Manifest, Modell-Cache (`model-cache.ts`), Prüfung, neues Modell aufnehmen. |
-| `docs/inference.md` | Inferenz und Kacheln – Worker (`upscale-worker.ts`, `upscaler.ts`, `types.ts`), Backend-Wahl, Runtime-Einbindung, Freistellen, Kachelplan und Überblenden (`tiling.ts`, Tests), Speicher-Rückfall, Alpha, Messwerte. |
+| `docs/models.md` | Modelle und Konvertierung – `scripts/models.json`, Konverter (`convert-models.mjs`, `lib/pth-reader.mjs`, `lib/nets.mjs` inkl. NAFNet + fp16-Fallstricke, `lib/onnx-writer.mjs`), fertige ONNX + Umschreiben (`lib/onnx-rewrite.mjs`: DeformConv, schmale Concat/Split), fp32/fp16, Manifest, Modell-Cache (`model-cache.ts`), Prüfung, neues Modell aufnehmen. |
+| `docs/inference.md` | Inferenz und Kacheln – Worker (`upscale-worker.ts`, `upscaler.ts`, `types.ts`), Backend-Wahl (eigenes GPU-Gerät), Runtime-Einbindung, Freistellen, weiche Fotos (`sharpness.ts`, `resample.ts`), Kachelplan und Überblenden (`tiling.ts`, Tests), Speicher-Rückfall, Alpha, Messwerte. |
 | `docs/image-io.md` | Bildformate – Erkennung, Dekodieren, Schreiben im Originalformat (`image-io.ts`, eigener BMP-Schreiber), Dateiname, Größengrenzen. |
 | `docs/ui.md` | Oberfläche – Aufbau (`index.astro`, `app.ts`), Panel, Bild öffnen, Vergleich (`compare.ts`), Hinweise, „Über“, i18n, Icons, Logo, Stil. |
 | `docs/deployment.md` | Build und Betrieb – npm-Skripte, DDEV, `dist/`, Unterverzeichnis, GitHub Pages, Cross-Origin-Isolation, CSP/Header, Caching, Testweg mit echter GPU. |
 | `docs/licenses.md` | Lizenzen – eigene Lizenz, Pflichten (BSD-3, MIT), wo Namen Dritter stehen dürfen, offene Punkte (kommerziell, GFPGAN, Vektorisieren). |
 
-## Stand (2026-11-05)
+## Stand (2026-11-06)
+- Schärfen weicher Fotos (06.11.2026): eingebaut und in Chrome (WebGPU fp16 + `?backend=wasm`) geprüft – Erkennung, Vorschlag/Zustimmung, Schnell/Gründlich bei 1×/2×/4×. Konsole sauber: eigenes GPU-Gerät für die Runtime (sonst `powerPreference`-Warnung unter Windows bei jeder Sitzung); Icons in durchscheinender Farbe ohne helle Überlappungen (`svg-join.ts`).
 - Firefox (05.11.2026): Runtime-Shader „Pad“ wird abgelehnt → Freistell-Modell läuft dort automatisch auf der CPU mit Hinweis – vom Nutzer im echten Firefox bestätigt (Ergebnis kommt). Offen: genaue Shader-Meldung per `?debug` einsammeln, um Firefox ganz auf der GPU zu halten (`docs/inference.md`).
 - Freistellen (05.11.2026): Maske 1,1–1,3 s auf dem Testrechner (Desktop-GPU, WebGPU + CPU-Threads für DeformConv), CPU-Weg 2,7 s; gegen das Originalmodell gleich (fp32 Logits ±0,0001).
 - MVP komplett, geprüft in Chrome (Desktop-GPU, WebGPU fp16) und mit `?backend=wasm` (CPU): alle drei Modelle, 2×/4×, PNG/JPEG/Alpha, Abbrechen, „zu groß“, Englisch, Handy-Ansicht, Unterverzeichnis-Build. Gekachelt vs. am Stück: 48–59 dB, keine Nähte.

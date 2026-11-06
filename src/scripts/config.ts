@@ -20,6 +20,16 @@ export const GRAIN = { max: 100, step: 5 };
 export const CUTOUT = 'cutout';
 
 /**
+ * Soft photos (docs/inference.md "Weiche Fotos"): deblurring model (id from scripts/models.json) and its tiles – the
+ * net halves the size four times, so tile sides are multiples of 16 (halving on low GPU memory: 384 → 192 → 96);
+ * the larger overlap and border because its view reaches far (U-net).
+ */
+export const SHARPEN = {
+    model: 'deblur',
+    tile: { size: 384, overlap: 64, minSize: 64, pad: 16, multiple: 16 },
+};
+
+/**
  * Tiling (docs/inference.md): the image is processed in square tiles of `size` source pixels that overlap by at least
  * `overlap` pixels; the overlap is blended with a linear ramp, so there are no seams. Every tile has the same shape
  * (edge tiles are moved inwards instead of being cut), so the GPU compiles its shaders once.

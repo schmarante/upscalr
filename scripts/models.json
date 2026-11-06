@@ -1,5 +1,5 @@
 {
-    "$comment": "Single source of the upscaling models: scripts/convert-models.mjs downloads and converts them, the app reads the generated public/models/manifest.json. Origin and license of every entry are listed in src/scripts/libraries.ts and public/licenses/ (BSD-3-Clause requires the notice). The interface names models only by content and quality (panel.* in the language files), never by the upstream names. arch 'onnx': ready-made ONNX files (one per precision; weights in a separate file under \"data\" are embedded), checked and rewritten for the browser. blend: the weights are mixed with a second checkpoint of the same network (share \"amount\" of the second) – the authors' way to set how strongly the fast photo model removes noise (docs/models.md).",
+    "$comment": "Single source of the models: scripts/convert-models.mjs downloads and converts them, the app reads the generated public/models/manifest.json. Origin and license of every entry are listed in src/scripts/libraries.ts and public/licenses/ (BSD-3-Clause requires the notice). The interface names models only by content and quality (panel.* in the language files), never by the upstream names. arch 'onnx': ready-made ONNX files (one per precision; weights in a separate file under \"data\" are embedded), checked and rewritten for the browser. blend: the weights are mixed with a second checkpoint of the same network (share \"amount\" of the second) – the authors' way to set how strongly the fast photo model removes noise (docs/models.md). file: cache name of the checkpoint where the URL has none (Google Drive). precisions: only these variants are written (default fp32 + fp16).",
     "models": [
         {
             "id": "photo-fast",
@@ -152,6 +152,20 @@
                 }
             },
             "license": "Apache-2.0"
+        },
+        {
+            "id": "deblur",
+            "arch": "nafnet",
+            "scale": 1,
+            "source": "https://drive.usercontent.google.com/download?id=14D4V4raNYIOhETfcuuLI3bGLB-OYIv6X&export=download&confirm=t",
+            "file": "NAFNet-REDS-width64.pth",
+            "sha256": "175fe8b3cdf3abedfbc87769779c3d9f491e05bb2e73ea9d627883f90a4b2df3",
+            "weights": "params",
+            "precisions": [
+                "fp16"
+            ],
+            "license": "MIT",
+            "task": "deblur"
         }
     ]
 }

@@ -1,4 +1,4 @@
-// Converts the upscaling models listed in scripts/models.json to ONNX (npm run models):
+// Converts the models listed in scripts/models.json to ONNX (npm run models):
 // downloads each checkpoint once into .cache/weights/ (checked against its sha256), rebuilds the network as an ONNX
 // graph (scripts/lib/nets.mjs) and writes two variants to public/models/ (arch "onnx": ready-made ONNX files per
 // precision, checked, copied and made WebGPU-friendly by scripts/lib/onnx-rewrite.mjs) – float32 (any backend) and float16
@@ -44,7 +44,8 @@ async function download(url, attempts = 5) {
 }
 
 /** a source file (checkpoint or ready-made ONNX) from the cache or the network, checked against its sha256 */
-async function fetchSource(model, source, expected, cacheName = path.basename(new URL(source).pathname)) {
+async function fetchSource(model, source, expected, cacheName) {
+    cacheName ??= path.basename(new URL(source).pathname);
     const file = path.join(cacheDir, cacheName);
     let buf = fs.existsSync(file) ? fs.readFileSync(file) : null;
     if (buf && expected && sha256(buf) !== expected) {
@@ -122,7 +123,8 @@ for (const model of models) {
     }
     const build = BUILDERS[model.arch];
     if (!build) throw new Error(`${model.id}: unknown arch "${model.arch}"`);
-    const sd = readCheckpoint(await fetchSource(model, model.source, model.sha256), model.weights);
+    // "file": cache name where the URL has none (e.g. a Google Drive link)
+    const sd = readCheckpoint(await fetchSource(model, model.source, model.sha256, model.file), model.weights);
     if (model.blend) {
         // network interpolation: weights mixed with a second checkpoint of the same network (models.json "blend")
         const other = readCheckpoint(await fetchSource(model, model.blend.source, model.blend.sha256), model.blend.weights ?? model.weights);
@@ -131,7 +133,10 @@ for (const model of models) {
     }
     const params = [...sd.values()].reduce((n, t) => n + t.data.length, 0);
     const entry = { task: model.task, arch: model.arch, scale: model.scale, params, variants: {} };
+    // "precisions": only these variants (a large model ships as fp16 only – it also runs on the CPU, docs/models.md)
+    const precisions = model.precisions ?? ['fp32', 'fp16'];
     for (const [variant, type] of [['fp32', FLOAT], ['fp16', FLOAT16]]) {
+        if (!precisions.includes(variant)) continue;
         const bytes = build(sd, model.scale, type).encode({
             producer: 'upscalr',
             version: CONVERTER_VERSION,

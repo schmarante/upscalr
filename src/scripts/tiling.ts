@@ -31,8 +31,13 @@ export function starts(length: number, tile: number, overlap: number): number[] 
     return Array.from({ length: n }, (_, i) => Math.round((i * span) / (n - 1)));
 }
 
-export function planTiles(width: number, height: number, tile: number, overlap: number): TilePlan {
-    const tw = Math.min(tile, width), th = Math.min(tile, height);
+/**
+ * `multiple`: tile sides must be multiples of it (the deblurring net halves the size four times → 16; `tile` itself is
+ * one). A picture smaller than a tile gets a tile rounded up – tileInput mirrors the missing pixels.
+ */
+export function planTiles(width: number, height: number, tile: number, overlap: number, multiple = 1): TilePlan {
+    const up = (n: number) => Math.ceil(n / multiple) * multiple;
+    const tw = Math.min(tile, up(width)), th = Math.min(tile, up(height));
     return { tw, th, xs: starts(width, tw, overlap), ys: starts(height, th, overlap) };
 }
 

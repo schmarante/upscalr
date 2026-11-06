@@ -22,12 +22,14 @@ AddType text/javascript .mjs
 </IfModule>
 
 # Caching: bundled assets and models carry content hashes in their names, the runtime's files a version folder –
-# all immutable. The model list must always be fresh.
+# all immutable. The model list, the page and the scripts without a hash must always be fresh (no-cache = ask the
+# server, 304 if unchanged): without a rule the browser keeps the page by its own estimate, and an old page points to
+# bundles a new build has deleted.
 <IfModule mod_headers.c>
     <If "%{REQUEST_URI} =~ m#/(_astro|ort)/# || %{REQUEST_URI} =~ m#/models/.+\.onnx$#">
         Header set Cache-Control "public, max-age=31536000, immutable"
     </If>
-    <If "%{REQUEST_URI} =~ m#/models/manifest\.json$#">
+    <If "%{REQUEST_URI} =~ m#/models/manifest\.json$# || %{REQUEST_URI} =~ m#(/|\.html|/coi-serviceworker\.js|/coi-config\.js)$#">
         Header set Cache-Control "no-cache"
     </If>
 </IfModule>

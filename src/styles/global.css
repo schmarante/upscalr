@@ -29,6 +29,47 @@ select optgroup {
 /* the `hidden` attribute wins over display utilities (flex …) on the same element */
 [hidden] { display: none !important; }
 
+/* a new result is being computed (compare.ts setWorking): the picture softened and dimmed, a light band runs across it
+   in a loop (--soft-blur keeps the blur at a few screen px at any zoom); still without the band for reduced motion */
+.working-soft {
+    /* larger than the picture by twice the blur on each side (cut off by the container) – no faded edge */
+    top: calc(var(--soft-blur, 4px) * -2);
+    left: calc(var(--soft-blur, 4px) * -2);
+    width: calc(100% + var(--soft-blur, 4px) * 4);
+    height: calc(100% + var(--soft-blur, 4px) * 4);
+    filter: blur(var(--soft-blur, 4px)) brightness(0.7) saturate(0.6);
+}
+/* gloss edge: a square as large as the picture's diagonal (--sheen, compare.ts), centred and turned by 30°, carries a
+   narrow bright core with a soft glow trailing behind it; it moves along its own axis (top left → bottom right) from
+   fully outside to fully outside the picture, whatever its shape, then rests a moment */
+.working-shimmer {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--sheen, 200%);
+    height: var(--sheen, 200%);
+    margin: calc(var(--sheen, 200%) / -2) 0 0 calc(var(--sheen, 200%) / -2);
+    background: linear-gradient(90deg,
+        transparent 28%,
+        rgb(255 255 255 / 0.015) 34%,
+        rgb(255 255 255 / 0.04) 40%,
+        rgb(255 255 255 / 0.08) 44.5%,
+        rgb(255 255 255 / 0.14) 47.5%,
+        rgb(255 255 255 / 0.21) 49.3%,
+        rgb(255 255 255 / 0.24) 50%,
+        rgb(255 255 255 / 0.15) 51.2%,
+        rgb(255 255 255 / 0.05) 53.2%,
+        transparent 56%);
+    animation: working-shimmer 3.2s infinite;
+}
+@keyframes working-shimmer {
+    0% { transform: rotate(30deg) translateX(-62%); animation-timing-function: cubic-bezier(0.4, 0, 0.3, 1); }
+    69%, 100% { transform: rotate(30deg) translateX(62%); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .working-shimmer { display: none; }
+}
+
 /* checkerboard behind transparent results (compare.ts sets --checker so the squares keep their screen size) */
 .checker {
     background-color: #3a3a3a;

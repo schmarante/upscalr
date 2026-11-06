@@ -49,6 +49,11 @@ const OPTIONS = {
         { value: 'weak', icon: 'smooth-weak', key: 'panel.smoothWeak' },
     ],
     background: [{ value: 'keep', icon: 'bg-keep', key: 'panel.keep' }, { value: 'remove', icon: 'bg-remove', key: 'panel.remove' }],
+    sharpen: [
+        { value: 'off', icon: 'sharpen-off', key: 'panel.sharpenOff' },
+        { value: 'fast', icon: 'sharpen-fast', key: 'panel.sharpenFast' },
+        { value: 'thorough', icon: 'sharpen-thorough', key: 'panel.sharpenThorough' },
+    ],
 };
 ---
 
@@ -96,6 +101,11 @@ const OPTIONS = {
                 <img data-before alt="" draggable="false" class="absolute inset-0 size-full max-w-none" />
                 <div data-after-bg class="absolute inset-0 size-full opacity-0 transition-[opacity,background-color] duration-300"></div>
                 <img data-after alt="" draggable="false" class="absolute inset-0 size-full max-w-none" />
+                <!-- a new result is being computed: right of the divider the picture softened, a light band runs over it -->
+                <div data-working hidden class="pointer-events-none absolute inset-0 size-full overflow-hidden">
+                    <img data-working-img alt="" draggable="false" class="working-soft absolute max-w-none" />
+                    <div class="working-shimmer"></div>
+                </div>
             </div>
             <div data-brush-cursor hidden class="pointer-events-none absolute top-0 left-0 z-10 rounded-full border border-white/90 shadow-[0_0_0_1px_rgb(0_0_0/0.5)]"></div>
             <div data-divider hidden tabindex="0" role="separator" aria-orientation="vertical" data-i18n-aria="view.divider" aria-label={tr('view.divider')}
@@ -173,6 +183,14 @@ const OPTIONS = {
                 <span data-grain-value class="w-9 shrink-0 text-right text-white/80 tabular-nums"></span>
             </label>
             </div>
+            <!-- soft photos (phone): deblur + shrink to the real resolution before upscaling – also at 1× (app.ts) -->
+            <div data-sharpen-row class={row} data-i18n-title="panel.sharpenHint" title={tr('panel.sharpenHint')}>
+                <span class={rowLabel} data-i18n="panel.sharpen">{tr('panel.sharpen')}</span>
+                <span data-current="sharpen" class={rowValue}></span>
+                <div data-seg="sharpen" class={seg} role="group" data-i18n-aria="panel.sharpen" aria-label={tr('panel.sharpen')}>
+                    {OPTIONS.sharpen.map(o => <button type="button" data-value={o.value} class={segButton} data-i18n-title={o.key} title={tr(o.key)} data-i18n-aria={o.key} aria-label={tr(o.key)}><Fragment set:html={icon(o.icon, 'size-4')} /></button>)}
+                </div>
+            </div>
             <div class={row}>
                 <span class={rowLabel} data-i18n="panel.factor">{tr('panel.factor')}</span>
                 <span class={rowValue}></span>
@@ -191,6 +209,7 @@ const OPTIONS = {
 
             <div class="flex flex-col gap-0.5 text-white/60">
                 <div data-size class="tabular-nums"></div>
+                <div data-sharpen-info hidden></div>
                 <div data-model></div>
                 <div data-too-large hidden class="text-amber-300"></div>
                 <div data-hint hidden class="text-amber-300"></div>

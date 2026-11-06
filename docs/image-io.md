@@ -25,7 +25,7 @@ Safari schreibt kein WebP über den Canvas → dort ebenso PNG mit Hinweis. Eige
 
 ## Dateiname (`resultName`)
 
-`<name>-upscale.<endung>`, bei 1× (nur freigestellt) `<name>-cutout.<endung>` – die Endung des Originals bleibt in ihrer Schreibweise (`IMG_1.JPG` → `IMG_1-upscale.JPG`, `.jpeg` bleibt `.jpeg`). Musste in ein anderes Format geschrieben werden (s.o.), kommt dessen Endung (`bild.avif` → `bild-upscale.png`). Ohne Namen (Zwischenablage) heißt die Quelle `image.<ext>`.
+`<name>-upscale.<endung>`, bei 1× (nur freigestellt) `<name>-cutout.<endung>`, bei 1× nur geschärft (weiches Foto, ohne Freistellen) `<name>-sharpen.<endung>` – die Endung des Originals bleibt in ihrer Schreibweise (`IMG_1.JPG` → `IMG_1-upscale.JPG`, `.jpeg` bleibt `.jpeg`). Musste in ein anderes Format geschrieben werden (s.o.), kommt dessen Endung (`bild.avif` → `bild-upscale.png`). Ohne Namen (Zwischenablage) heißt die Quelle `image.<ext>`.
 
 ## Größengrenzen
 

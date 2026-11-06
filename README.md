@@ -62,6 +62,7 @@ UPSCALR is built on great open-source projects. Thanks to everyone who contribut
 | [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) | Weights of the photo and drawing models (converted to ONNX for the browser) | [BSD-3-Clause](public/licenses/real-esrgan.txt) |
 | [BiRefNet](https://github.com/ZhengPeng7/BiRefNet) | Background removal: detects and removes the background (ready-made ONNX export) | [MIT](public/licenses/birefnet.txt) |
 | [SAM 2.1 (Segment Anything)](https://github.com/facebookresearch/sam2) | Click selection: detects the object under the pointer (ready-made ONNX export) | [Apache-2.0](public/licenses/sam2.txt) |
+| [NAFNet](https://github.com/megvii-research/NAFNet) | Sharpening: removes blur from soft photos (weights converted to ONNX) | [MIT](public/licenses/nafnet.txt) |
 
 ### Build tools
 

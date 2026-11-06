@@ -1,6 +1,8 @@
 // The page (docs/ui.md): open an image (drop, file dialog, paste), choose content/quality/factor and whether to remove
 // the background, process in the worker with progress, compare before/after, download as "<name>-upscale.<ext>"
-// ("-cutout" at 1×) in the original format (PNG when the original cannot hold transparency).
+// ("-cutout" / "-sharpen" at 1×) in the original format (PNG when the original cannot hold transparency).
+// On opening, the worker measures how sharp the picture really is; a soft photo can be sharpened first (deblurring model
+// and shrinking to its real resolution – the model is only downloaded after the user agreed).
 import { applyDom, getLocale, t } from './i18n';
 import { BACKGROUNDS, CompareView, type Insets, type PreviewBackground } from './compare';
 import { loadManifest, publicUrl, Upscaler, UpscaleError, type BackendInfo, type UpscaleResult, type WorkerNotice } from './upscaler';
@@ -10,13 +12,14 @@ import { ALPHA_FORMATS, detectMime, FORMATS, resultName } from './image-io';
 import { showNotice } from './notice';
 import { buildAbout } from './about';
 import { segmented } from './ui-controls';
-import { CONTENT, CUTOUT, EDIT, ENCODE, GRAIN, LIMITS, TILING } from './config';
+import { CONTENT, CUTOUT, EDIT, ENCODE, GRAIN, LIMITS, SHARPEN, TILING } from './config';
 import { debugLog, DEBUG } from './log';
-import type { Manifest, ManifestModel, Progress } from './types';
+import type { Manifest, ManifestModel, Progress, SharpenMode, Sharpness } from './types';
 
 type Content = 'photo' | 'drawing';
 type Quality = 'fast' | 'quality';
 type Smoothing = keyof typeof CONTENT.photo.fast;
+type Sharpen = 'off' | SharpenMode;
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel)!;
 const NBSP = ' ';
@@ -25,8 +28,12 @@ const NBSP = ' ';
 
 const SETTINGS_KEY = 'upscalr.settings';
 type Factor = 1 | 2 | 4;
-const settings: { content: Content; quality: Quality; smoothing: Smoothing; grain: number; factor: Factor; cutout: boolean } =
-    { content: 'photo', quality: 'fast', smoothing: 'medium', grain: 0, factor: 4, cutout: false };
+/**
+ * sharpen: what to do with soft photos; sharpenConsent: the user agreed to download the deblurring model;
+ * sharpenAsked: the suggestion on a soft photo was answered (not shown again)
+ */
+const settings: { content: Content; quality: Quality; smoothing: Smoothing; grain: number; factor: Factor; cutout: boolean; sharpen: Sharpen; sharpenConsent: boolean; sharpenAsked: boolean } =
+    { content: 'photo', quality: 'fast', smoothing: 'medium', grain: 0, factor: 4, cutout: false, sharpen: 'off', sharpenConsent: false, sharpenAsked: false };
 try {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
     if (saved.content === 'photo' || saved.content === 'drawing') settings.content = saved.content;
@@ -35,10 +42,14 @@ try {
     if (Number.isFinite(saved.grain)) settings.grain = Math.max(0, Math.min(GRAIN.max, Math.round(saved.grain)));
     if (saved.factor === 1 || saved.factor === 2 || saved.factor === 4) settings.factor = saved.factor;
     if (typeof saved.cutout === 'boolean') settings.cutout = saved.cutout;
+    if (saved.sharpen === 'off' || saved.sharpen === 'fast' || saved.sharpen === 'thorough') settings.sharpen = saved.sharpen;
+    if (typeof saved.sharpenConsent === 'boolean') settings.sharpenConsent = saved.sharpenConsent;
+    if (typeof saved.sharpenAsked === 'boolean') settings.sharpenAsked = saved.sharpenAsked;
 } catch { /* storage blocked or broken */ }
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch { /* ignore */ } };
 
-interface Source { file: File; name: string; mime: string; url: string; width: number; height: number }
+/** sharpness: measured on opening (null while the worker measures) */
+interface Source { file: File; name: string; mime: string; url: string; width: number; height: number; sharpness: Sharpness | null }
 /** key: settings it was made with (another key = outdated); grain: the grain in it (0…1) */
 interface Result extends UpscaleResult { url: string; name: string; key: string; grain: number }
 
@@ -74,24 +85,41 @@ const dims = (w: number, h: number) => `${num(w)}${NBSP}×${NBSP}${num(h)}`;
 
 const modelId = () => (settings.content === 'drawing' ? CONTENT.drawing
     : settings.quality === 'fast' ? CONTENT.photo.fast[settings.smoothing] : CONTENT.photo.quality);
+/**
+ * Sharpening for the current picture: the chosen mode when the photo was measured soft. Shrunk to half before
+ * upscaling (its real resolution) – except at 4×: the upscaler only reaches 4× of the shrunk picture, so it is only
+ * deblurred there (docs/inference.md "Weiche Fotos").
+ */
+function sharpenPlan(): { mode: SharpenMode; shrink: 1 | 2 } | null {
+    if (settings.content !== 'photo' || settings.sharpen === 'off' || !source?.sharpness?.soft) return null;
+    return { mode: settings.sharpen, shrink: settings.factor === 4 ? 1 : 2 };
+}
+/** the upscaler runs: above 1×, and at 1× for a shrunk soft photo (back to its size) */
+const upscaling = () => settings.factor > 1 || (sharpenPlan()?.shrink ?? 1) > 1;
 /** grain of the current settings (0…1): photos, when upscaled */
-const grainAmount = () => (settings.content === 'photo' && settings.factor > 1 ? settings.grain / 100 : 0);
-const settingsKey = () => `${settings.factor > 1 ? modelId() : '-'}|${settings.factor}|${settings.cutout}`;
-/** the file of a model for the current backend (half floats where the GPU can) */
+const grainAmount = () => (settings.content === 'photo' && upscaling() ? settings.grain / 100 : 0);
+/** the settings a result was made with (cut-out last: editing checks it) */
+const settingsKey = () => `${upscaling() ? modelId() : '-'}|${settings.factor}|${sharpenPlan()?.mode ?? '-'}|${settings.cutout}`;
+/** the file of a model for the current backend (half floats where the GPU can; a large model has only those) */
 function fileOf(m: ManifestModel | undefined) {
     if (!m || !upscaler.info) return null;
-    const v = m.variants[upscaler.info.precision] ?? m.variants.fp32;
-    return { url: publicUrl(`models/${v.file}`), bytes: v.bytes };
+    const v = m.variants[upscaler.info.precision] ?? m.variants.fp32 ?? m.variants.fp16;
+    return v ? { url: publicUrl(`models/${v.file}`), bytes: v.bytes } : null;
 }
-/** models the current settings need: upscaling (not at 1×) and/or background removal */
+/** the deblurring model's file for this backend (size for the consent question) */
+const sharpenFile = () => fileOf(manifest?.models[SHARPEN.model]);
+/** models the current settings need: upscaling, background removal, deblurring (soft photo) */
 function neededModels() {
     const upModel = manifest?.models[modelId()], cutModel = manifest?.models[CUTOUT];
-    const up = settings.factor > 1 ? fileOf(upModel) : null;
+    const plan = sharpenPlan();
+    const up = upscaling() ? fileOf(upModel) : null;
     const cut = settings.cutout ? fileOf(cutModel) : null;
+    const sharp = plan ? sharpenFile() : null;
     return {
         upscale: up && upModel?.scale ? { ...up, scale: upModel.scale } : null,
         cutout: cut && cutModel?.input ? { ...cut, ...cutModel.input } : null,
-        missing: (settings.factor > 1 && !up) || (settings.cutout && !cut),
+        sharpen: sharp && plan ? { ...sharp, ...plan } : null,
+        missing: (upscaling() && !up) || (settings.cutout && !cut) || (!!plan && !sharp),
     };
 }
 const allModelUrls = () => Object.values(manifest?.models ?? {}).flatMap(m => Object.values(m.variants).map(v => publicUrl(`models/${v.file}`)));
@@ -118,12 +146,56 @@ grainInput.addEventListener('input', () => { settings.grain = Number(grainInput.
 grainInput.addEventListener('change', () => { settings.grain = Number(grainInput.value); changed(); });
 const setFactor = segmented($('[data-seg="factor"]', panel), v => { settings.factor = Number(v) as Factor; changed(); });
 const setCutoutMode = segmented($('[data-seg="background"]', panel), v => { settings.cutout = v === 'remove'; changed(); });
+const setSharpen = segmented($('[data-seg="sharpen"]', panel), v => chooseSharpen(v as Sharpen));
 setContent(settings.content);
 setQuality(settings.quality);
 setSmoothing(settings.smoothing);
 grainInput.value = String(settings.grain);
 setFactor(String(settings.factor));
 setCutoutMode(settings.cutout ? 'remove' : 'keep');
+setSharpen(settings.sharpen);
+
+/** a sharpening mode – the model download needs the user's consent first (unless it is already in the browser) */
+function chooseSharpen(mode: Sharpen) {
+    const file = sharpenFile();
+    if (mode === 'off' || settings.sharpenConsent || !file || cached.has(file.url)) {
+        settings.sharpen = mode;
+        changed();
+        return;
+    }
+    setSharpen(settings.sharpen);   // back until agreed
+    showNotice({
+        id: 'sharpen', icon: 'info', title: t('notice.sharpenConsent.title'),
+        message: t('notice.sharpenConsent.message', { size: megabytes(file.bytes) }),
+        actions: [
+            { label: t('notice.sharpenConsent.load'), primary: true, onClick: () => enableSharpen(mode) },
+            { label: t('notice.sharpenConsent.cancel') },
+        ],
+    });
+}
+
+function enableSharpen(mode: SharpenMode) {
+    settings.sharpen = mode;
+    settings.sharpenConsent = true;
+    settings.sharpenAsked = true;
+    setSharpen(mode);
+    changed();
+}
+
+/** a soft photo, sharpening off and never asked: suggest it (with the download size – the answer is the consent) */
+function suggestSharpen() {
+    const file = sharpenFile();
+    if (!source?.sharpness?.soft || settings.content !== 'photo' || settings.sharpen !== 'off' || settings.sharpenAsked || !file) return;
+    const download = settings.sharpenConsent || cached.has(file.url) ? '' : ` ${t('notice.soft.download', { size: megabytes(file.bytes) })}`;
+    showNotice({
+        id: 'sharpen', icon: 'info', title: t('notice.soft.title'), message: t('notice.soft.message') + download,
+        actions: [
+            { label: t('notice.soft.fast'), primary: true, onClick: () => enableSharpen('fast') },
+            { label: t('notice.soft.thorough'), onClick: () => enableSharpen('thorough') },
+            { label: t('notice.soft.no'), onClick: () => { settings.sharpenAsked = true; saveSettings(); } },
+        ],
+    });
+}
 
 function changed() {
     saveSettings();
@@ -136,6 +208,7 @@ function updatePanel() {
     $('[data-quality-row]', panel).hidden = settings.content !== 'photo';
     $('[data-smoothing-row]', panel).hidden = settings.content !== 'photo' || settings.quality !== 'fast';
     $('[data-grain-row]', panel).hidden = settings.content !== 'photo';
+    $('[data-sharpen-row]', panel).hidden = settings.content !== 'photo';
     grainInput.disabled = !!running || !!editor;
     showGrain();
     // name of the current choice next to the row name (the options are icons only)
@@ -144,11 +217,11 @@ function updatePanel() {
         el.textContent = on?.dataset.i18nAria ? t(on.dataset.i18nAria) : '';
     }
     // at 1× there is no upscaling: content and quality do not matter
-    $('[data-upscale-rows]', panel).classList.toggle('opacity-40', settings.factor === 1);
+    $('[data-upscale-rows]', panel).classList.toggle('opacity-40', !upscaling());
     const fileBox = $('[data-file]', panel);
     $('[data-file-name]', fileBox).textContent = source ? source.name : t('panel.noImage');
     $('[data-file-name]', fileBox).title = source?.name ?? '';
-    $('[data-file-size]', fileBox).textContent = source ? `${dims(source.width, source.height)}${NBSP}px · ${FORMATS[source.mime]?.label ?? source.mime}` : '';
+    $('[data-file-size]', fileBox).textContent = source ? `${dims(source.width, source.height)}${NBSP}px · ${FORMATS[source.mime]?.label ?? source.mime}${source.sharpness?.soft ? ` · ${t('panel.soft')}` : ''}` : '';
 
     const sizeLine = $('[data-size]', panel);
     const tooLarge = !!source && !fits(source.width, source.height, settings.factor);
@@ -157,19 +230,29 @@ function updatePanel() {
     warn.hidden = !tooLarge;
     if (tooLarge) warn.textContent = t('panel.tooLarge', { factor: settings.factor, max: num(LIMITS.maxSide), mp: num(Math.round(LIMITS.maxPixels / 1e6)) });
 
+    // sharpening chosen: say whether this photo gets it
+    const sharpenInfo = $('[data-sharpen-info]', panel);
+    const sharpenState = !source || settings.content !== 'photo' || settings.sharpen === 'off' ? ''
+        : !source.sharpness ? t('panel.sharpenChecking') : source.sharpness.soft ? t('panel.sharpenSoft') : t('panel.sharpenSharp');
+    sharpenInfo.hidden = !sharpenState;
+    sharpenInfo.textContent = sharpenState;
+
     const need = neededModels();
-    const files = [need.upscale, need.cutout].filter(f => f !== null);
+    const files = [need.upscale, need.cutout, need.sharpen].filter(f => f !== null);
     const toLoad = files.filter(f => !cached.has(f.url)).reduce((n, f) => n + f.bytes, 0);
     $('[data-model]', panel).textContent = !manifest || !files.length ? '' : toLoad ? t('panel.modelSize', { size: megabytes(toLoad) }) : t('panel.modelCached');
-    const nothingToDo = settings.factor === 1 && !settings.cutout;
+    const nothingToDo = !upscaling() && !settings.cutout;
+    // the measurement is still running and would decide about sharpening
+    const measuring = !!source && !source.sharpness && settings.content === 'photo' && settings.sharpen !== 'off';
     const hint = $('[data-hint]', panel);
     hint.hidden = !nothingToDo;
     hint.textContent = nothingToDo ? t('panel.needCutout') : '';
 
     // another grain is applied to the result directly – only if the worker no longer has it, it needs a new run
     const outdated = !!result && (result.key !== settingsKey() || (!workerHasResult && result.grain !== grainAmount()));
-    runButton.disabled = !source || !manifest || !upscaler.info || tooLarge || nothingToDo || need.missing || !!running || regraining || (!!result && !outdated);
-    $('[data-run-label]', runButton).textContent = t(settings.factor === 1 ? (result ? 'panel.againCutout' : 'panel.startCutout') : result ? 'panel.again' : 'panel.start');
+    runButton.disabled = !source || !manifest || !upscaler.info || tooLarge || nothingToDo || measuring || need.missing || !!running || regraining || (!!result && !outdated);
+    const label = settings.factor > 1 ? 'panel.start' : settings.cutout ? 'panel.startCutout' : 'panel.startSharpen';
+    $('[data-run-label]', runButton).textContent = t(result ? label.replace('start', 'again') : label);
     runButton.hidden = !!running;
     cancelButton.hidden = !running;
 
@@ -183,7 +266,7 @@ function updatePanel() {
     $('[data-download-box]', panel).hidden = !result;
     // editing: only for a cut-out whose settings still match, and when the click-selection models exist
     $('[data-edit-start]', panel).hidden = !result?.alpha || !result.key.endsWith('|true') || !manifest?.models['select-encoder'] || !!running || regraining || !workerHasResult;
-    $('[data-bg]').hidden = !(result?.alpha || editor);
+    $('[data-bg]').hidden = !(result?.alpha || editor) || (!!running && !editor);   // not while a new result is computed
 
     const info = upscaler.info;
     $('[data-backend]', panel).textContent = info ? `${t(`panel.backend.${info.backend}`)} · ${t(`panel.precision.${info.precision}`)}` : t('panel.backend.pending');
@@ -210,7 +293,7 @@ function showProgress(p: Progress | null) {
     } else if (p.phase === 'tiles') {
         if (p.done === 0) tilesStarted = performance.now();
         fraction = p.done / p.total;
-        text = t('progress.tiles', { done: p.done, total: p.total });
+        text = t(p.step === 'sharpen' ? 'progress.sharpenTiles' : 'progress.tiles', { done: p.done, total: p.total });
         if (p.done > 0 && p.done < p.total) {
             const eta = ((performance.now() - tilesStarted) / p.done) * (p.total - p.done);
             extra = t('progress.eta', { time: duration(eta) });
@@ -263,8 +346,21 @@ async function openFile(picked: File) {
     if (editor) endEdit();
     if (source) URL.revokeObjectURL(source.url);
     clearResult();
-    source = { file, name: file.name || `image.${FORMATS[mime]?.ext ?? 'png'}`, mime, url: URL.createObjectURL(file), width, height };
+    const opened: Source = { file, name: file.name || `image.${FORMATS[mime]?.ext ?? 'png'}`, mime, url: URL.createObjectURL(file), width, height, sharpness: null };
+    source = opened;
     debugLog('open', source.name, mime, width, height);
+    // how sharp is it really? (worker, a fraction of a second) – a soft photo may get the sharpening suggestion
+    createImageBitmap(file).then(b => upscaler.analyze(b)).then(sharpness => {
+        opened.sharpness = sharpness;
+        debugLog('sharpness', sharpness);
+        if (source !== opened) return;
+        updatePanel();
+        suggestSharpen();
+    }).catch(e => {
+        console.warn('sharpness analysis failed:', e);
+        opened.sharpness = { soft: false, width: NaN, halfWidth: NaN, edges: 0 };
+        if (source === opened) updatePanel();
+    });
     document.body.classList.add('has-image');
     $('#start').hidden = true;
     $('#view-tools').hidden = false;
@@ -294,7 +390,7 @@ async function upscale() {
     const need = neededModels();
     if (need.missing || (!need.upscale && !need.cutout)) return;
     const key = settingsKey();
-    const suffix = settings.factor === 1 ? 'cutout' : 'upscale';   // settings may change while it runs
+    const suffix = settings.factor > 1 ? 'upscale' : settings.cutout ? 'cutout' : 'sharpen';   // settings may change while it runs
     const src = source;
     // transparency needs a format that can hold it (JPEG cannot) → PNG
     const mime = need.cutout && !ALPHA_FORMATS.has(src.mime) ? 'image/png' : src.mime;
@@ -316,12 +412,17 @@ async function upscale() {
         factor: settings.factor,
         upscale: need.upscale,
         cutout: need.cutout,
+        sharpen: need.sharpen,
         mime,
         tile: { ...TILING },
+        sharpenTile: { ...SHARPEN.tile },
         quality: { ...ENCODE },
         keepUrls: allModelUrls(),
     }, showProgress, workerNotice);
     running = job;
+    // again with a result on screen: right of the divider the softened picture instead of the old result (outdated –
+    // or empty after a cut-out that found nothing)
+    if (result) compare.setWorking(true);
     showProgress({ phase: 'prepare' });
     updatePanel();
     try {
@@ -347,6 +448,7 @@ async function upscale() {
         }
     } finally {
         running = null;
+        compare.setWorking(false);
         showProgress(null);
         cached = await cachedModels();
         updatePanel();

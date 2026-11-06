@@ -6,7 +6,10 @@
 // when read (docs/ui.md): every fixed colour becomes currentColor (they come out black), a missing fill on the root
 // means currentColor too (the SVG default is black), rules of an embedded <style> block are moved onto the elements
 // (inline in the page they would apply to the whole document – the class names repeat from file to file), XML header,
-// comments, ids, fixed width/height go. Plain string work (no DOMParser): the same code runs in .astro files at build time.
+// comments, ids, fixed width/height go. Sibling stroke-only shapes become one path, so overlaps do not show in a
+// translucent colour (svg-join.ts). Plain string work (no DOMParser): the same code runs in .astro files at build time.
+import { joinStrokes } from './svg-join';
+
 const FILES = import.meta.glob<string>('../assets/icons/*.svg', { eager: true, query: '?raw', import: 'default' });
 
 // properties kept from a style block / style attribute (presentation attributes of SVG)
@@ -61,7 +64,7 @@ export function normalizeSvg(text: string): string {
         root = false;
         return `<${tag}${Object.entries(out).map(([k, v]) => ` ${k}="${v}"`).join('')}${close ? '/' : ''}>`;
     });
-    return svg.replace(/>\s+</g, '><').trim();
+    return joinStrokes(svg.replace(/>\s+</g, '><').trim());
 }
 
 const FILE_OF = new Map(Object.entries(FILES).map(([file, text]) => [file.slice(file.lastIndexOf('/') + 1, -'.svg'.length), text]));

@@ -86,6 +86,10 @@ Karten oben mittig im Panel-Stil, gleiche `id` ersetzt die Karte. Verwendet: kei
 
 Je Icon eine SVG-Datei in `src/assets/icons/` (16×16-viewBox, Farbe = Textfarbe), im Code nur `icon(name, klassen)` – keine SVG-Strings im Code. Aus RINDR übernommen: close, cross, warning, info, download, open, check, reset; neu: image, fit, actual-size, upscale. Ausnahme: Pfeile im Griff der Trennlinie (inline in index.astro).
 
+**Durchscheinende Icons ohne helle Überlappungen** (06.11.2026, Hinweis des Nutzers): Mit einer Farbe mit Alpha (`text-white/35` am Icon oder geerbt, z. B. `text-white/70` der Segment-Knöpfe, `text-white/90` des Panels) malt der Browser jedes Element einzeln – wo sich Rahmen, Linie und Kreis treffen, wird es heller (gemessen im Bild-Icon über Schwarz: 147 statt 89). Zwei Gegenmittel:
+- **Einzeln stehende Icons**: Deckkraft mit `opacity-*` statt Farb-Alpha (`text-white opacity-35`) – die ganze Grafik wird erst gemalt, dann abgeschwächt; hilft bei jedem Icon.
+- **Geerbte Farbe**: `normalizeSvg` fasst am Ende benachbarte reine Konturen mit gleichen Attributen zu **einem** `<path>` zusammen (`svg-join.ts`; rect/circle/ellipse/line/polyline/polygon als Pfaddaten) – die Kontur eines Pfads wird in einem Zug gemalt, Überlappungen addieren sich nicht. Nicht zusammengefasst: gefüllte Formen (Teilpfade einer Füllung können sich aufheben), Strichelung (Muster begänne anderswo, z. B. Rahmen von `bg-remove`), `transform` und andere Attribute, Formen außerhalb von svg/g. Die Dateien selbst bleiben unverändert (im Vektorprogramm weiter einzeln bearbeitbar). Test: `tests/svg-join.test.ts`.
+
 ## Logo
 
 `src/assets/upscalr.svg` (einfarbig, `currentColor`; kleines Quadrat → großer Rahmen mit Pfeil) – eigener Entwurf, **Platzhalter** bis zu einem endgültigen Logo. Daraus: `public/favicon.svg` (weiß auf #0284c7), PNG-Icons, `favicon.ico`, `og-image.png` (1200×630) per ImageMagick (`convert -density … favicon.svg`), `public/upscalr.svg` und `.github/assets/upscalr-white.svg` für die README.

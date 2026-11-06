@@ -112,7 +112,7 @@ const OPTIONS = {
         <!-- start: no picture yet -->
         <div id="start" class="pointer-events-none absolute inset-0 flex items-center justify-center p-6 max-md:pb-[22rem] md:pl-80">
             <div class="pointer-events-auto flex max-w-md flex-col items-center gap-3 rounded-xl border-2 border-dashed border-white/15 bg-black/25 px-8 py-10 text-center">
-                <Fragment set:html={icon('image', 'size-10 text-white/35')} />
+                <Fragment set:html={icon('image', 'size-10 text-white opacity-35')} />
                 <div class="text-lg font-medium" data-i18n="start.title">{tr('start.title')}</div>
                 <div class="text-sm text-white/60" data-i18n="start.or">{tr('start.or')}</div>
                 <button type="button" data-pick class={`${BUTTON_PRIMARY} mt-1 text-sm`}>
@@ -133,7 +133,7 @@ const OPTIONS = {
 
             <div data-main class="flex flex-col gap-3">
             <div data-file class="flex items-center gap-2 rounded-md bg-white/5 p-2">
-                <Fragment set:html={icon('image', 'size-4 shrink-0 text-white/50')} />
+                <Fragment set:html={icon('image', 'size-4 shrink-0 text-white opacity-50')} />
                 <div class="min-w-0 flex-1">
                     <div data-file-name class="truncate text-white">{tr('panel.noImage')}</div>
                     <div data-file-size class="truncate text-white/50"></div>

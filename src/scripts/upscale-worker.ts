@@ -64,7 +64,11 @@ async function init(ortBase: string, forceCpu: boolean, forceFp32: boolean) {
     // runtime log only with ?ortlog=verbose – its warnings (e.g. one line per removed constant) drown everything else
     ort.env.logLevel = verbose ? 'verbose' : 'error';
     try {
-        const adapter = forceCpu ? null : await navigator.gpu?.requestAdapter({ powerPreference: 'high-performance' });
+        // powerPreference picks the fast GPU of a laptop with two; Chrome on Windows ignores it (the system setting
+        // decides) and warns in the console every time – not asked there (Chromium only: has userAgentData)
+        const ua = (navigator as unknown as { userAgentData?: { platform?: string } }).userAgentData;
+        const options: GPURequestAdapterOptions = ua?.platform === 'Windows' ? {} : { powerPreference: 'high-performance' };
+        const adapter = forceCpu ? null : await navigator.gpu?.requestAdapter(options);
         if (adapter) {
             backend = 'webgpu';
             precision = adapter.features.has('shader-f16') && !forceFp32 ? 'fp16' : 'fp32';
